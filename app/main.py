@@ -106,7 +106,8 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 pred = calculate_prediction(
                     analysis,
                     home_odds=match.get("home_odds"),
-                    away_odds=match.get("away_odds")
+                    away_odds=match.get("away_odds"),
+                    handicap=match.get("handicap")
                 )
                 pred["id"] = match["id"]
                 # Attach handicap text for display
@@ -183,7 +184,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
         if not stats:
             return "ยังไม่มีข้อมูลประวัติการทายผลเลยนะคะ 🥺💦"
             
-        res = f"📊 สถิติผลงานการทายผลของอัญค่ะ! 💖\n\n"
+        res = f"📊 สถิติผลงานการทำนายค่ะ! 💖\n\n"
         res += f"📈 ผลงานภาพรวม:\n"
         res += f"   - ทายทั้งหมด: {stats['total']} คู่\n"
         res += f"   - ชนะ (WIN): {stats['wins']} คู่ (เขียวขจี) 🟢\n"
@@ -205,7 +206,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 res += f"   - ทาย: วาง {item['rec_team']} (ราคาต่อรอง: {item['handicap_value']})\n"
                 res += f"   - ผลลัพธ์: {emoji} (สกอร์: {item['actual_score']})\n\n"
                 
-        res += "อัญจะตั้งใจวิเคราะห์ให้แม่นยำยิ่งขึ้นเสมอนะคะ! 🥺💕💪"
+        res += "จะตั้งใจวิเคราะห์ให้แม่นยำยิ่งขึ้นเสมอนะคะ! 🥺💕💪"
         return res
         
     elif command.startswith("วิเคราะห์ "):
@@ -228,7 +229,8 @@ def process_user_command(command: str, is_group: bool = False) -> str:
             pred = calculate_prediction(
                 analysis,
                 home_odds=matched_match.get("home_odds"),
-                away_odds=matched_match.get("away_odds")
+                away_odds=matched_match.get("away_odds"),
+                handicap=matched_match.get("handicap")
             )
             
             # Save single match analysis prediction

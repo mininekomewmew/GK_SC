@@ -73,9 +73,15 @@ def fetch_today_matches() -> list:
             away_cols = row.xpath("./td[contains(@class, 'utable_f4')]//span/text()")
             away_team = away_cols[0].strip() if away_cols else ""
             
-            # Extract handicap line text
+            # Detect favorite team to set handicap sign (home favorite is negative, away is positive)
+            home_fav = bool(row.xpath("./td[contains(@class, 'utable_f2')]//span[contains(@class, 'ured')]"))
             odds_col = row.xpath("./td[contains(@class, 'classodds')]/text()")
-            handicap = odds_col[0].strip() if odds_col else ""
+            handicap_text = odds_col[0].strip() if odds_col else ""
+            
+            if home_fav and handicap_text and not handicap_text.startswith("-") and handicap_text != "เสมอ":
+                handicap = "-" + handicap_text
+            else:
+                handicap = handicap_text
             
             # Extract live ID for odds mapping (row_id is the primary live_id)
             live_id = row_id

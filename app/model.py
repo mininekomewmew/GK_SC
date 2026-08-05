@@ -17,13 +17,17 @@ def parse_handicap(handicap_str: str) -> float:
     except Exception:
         return 0.0
 
-def calculate_prediction(analysis: dict, home_odds: float = None, away_odds: float = None) -> dict:
+def calculate_prediction(analysis: dict, home_odds: float = None, away_odds: float = None, handicap: str = None) -> dict:
     game_info = analysis.get("gameInfo", {})
     team_history = analysis.get("gameTeamHistory", {})
     
     home_name = game_info.get("taname", "Home")
     away_name = game_info.get("tbname", "Away")
-    handicap_str = game_info.get("handicap", "0.0")
+    
+    if handicap is not None:
+        handicap_str = handicap
+    else:
+        handicap_str = game_info.get("handicap", "0.0")
     
     # 1. Parse goals from last 20 matches (or as many as available)
     history_a = team_history.get("A", {}).get("all", {}).get("history", {})

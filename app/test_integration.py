@@ -106,7 +106,7 @@ class TestIntegration(unittest.TestCase):
         save_prediction("1", "2026-08-05", "Team A", "Team B", -0.25, "Team B", 0.08, 0.55)
         
         res = process_user_command("ผลงาน", is_group=False)
-        self.assertIn("สถิติผลงานการทายผล", res)
+        self.assertIn("สถิติผลงานการทำนาย", res)
         self.assertIn("ชนะ (WIN): 1 คู่", res)
         self.assertIn("Team A VS Team B", res)
 
