@@ -67,6 +67,31 @@ class TestIntegration(unittest.TestCase):
         self.assertIn("ทรรศนะจากเว็บ Polball", res)
         self.assertIn("รอง Team B", res)
 
+    @patch('app.main.fetch_finished_scores')
+    def test_performance_command(self, mock_finished_scores):
+        mock_finished_scores.return_value = {"1": "1-2"}
+        from app.main import HISTORY_FILE, save_prediction
+        import os
+        
+        if os.path.exists(HISTORY_FILE):
+            try:
+                os.remove(HISTORY_FILE)
+            except Exception:
+                pass
+                
+        save_prediction("1", "2026-08-05", "Team A", "Team B", -0.25, "Team B", 0.08, 0.55)
+        
+        res = process_user_command("ผลงาน", is_group=False)
+        self.assertIn("สถิติผลงานการทายผล", res)
+        self.assertIn("ชนะ (WIN): 1 คู่", res)
+        self.assertIn("Team A VS Team B", res)
+        
+        if os.path.exists(HISTORY_FILE):
+            try:
+                os.remove(HISTORY_FILE)
+            except Exception:
+                pass
+
     @patch('app.main.save_group_id')
     @patch('app.main.verify_signature', return_value=True)
     def test_webhook_saves_group_id_on_message(self, mock_verify, mock_save):

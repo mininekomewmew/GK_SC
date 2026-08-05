@@ -262,3 +262,33 @@ def fetch_polball_analysis(home_team: str, away_team: str) -> dict:
         
     return None
 
+def fetch_finished_scores() -> dict:
+    url = "https://goal7.co/"
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        if resp.status_code != 200:
+            return {}
+        tree = html.fromstring(resp.content)
+        rows = tree.xpath("//tr[contains(@class, 'utable_tr')]")
+        scores = {}
+        for row in rows:
+            analysis_links = row.xpath(".//a[contains(@href, 'analyse/?id=')]/@href")
+            match_id = None
+            if analysis_links:
+                match_id = analysis_links[0].split("id=")[-1].strip()
+            if not match_id:
+                row_id = row.attrib.get("id")
+                match_id = row_id
+            if not match_id:
+                continue
+                
+            cols = row.xpath("./td")
+            text_content = [c.text_content().strip() for c in cols]
+            if len(text_content) > 7:
+                score = text_content[7]
+                if '?' not in score and '-' in score:
+                    scores[match_id] = score.replace(" ", "")
+        return scores
+    except Exception:
+        return {}
+

@@ -1,5 +1,6 @@
 import os
 import asyncio
+import json
 from datetime import datetime, time, timedelta
 from dotenv import load_dotenv
 load_dotenv()
@@ -7,7 +8,7 @@ load_dotenv()
 from fastapi import FastAPI, Request, Header, HTTPException
 
 from app.line_bot import verify_signature, reply_message, push_message
-from app.scraper import fetch_today_matches, fetch_match_analysis, fetch_polball_analysis
+from app.scraper import fetch_today_matches, fetch_match_analysis, fetch_polball_analysis, fetch_finished_scores
 from app.model import calculate_prediction
 
 app = FastAPI(title="Football Prediction Bot")
@@ -76,6 +77,86 @@ async def webhook(request: Request, x_line_signature: str = Header(None)):
                 
     return "OK"
 
+HISTORY_FILE = "predictions_history.json"
+
+def save_prediction(match_id: str, date_str: str, home_team: str, away_team: str, handicap_val: float, rec_team: str, edge_val: float, win_prob: float):
+    history = {}
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        except Exception:
+            pass
+            
+    history[match_id] = {
+        "id": match_id,
+        "date": date_str,
+        "home_team": home_team,
+        "away_team": away_team,
+        "handicap_value": handicap_val,
+        "rec_team": rec_team,
+        "edge_value": edge_val,
+        "win_prob": win_prob,
+        "actual_score": history.get(match_id, {}).get("actual_score"),
+        "result": history.get(match_id, {}).get("result"),
+    }
+    
+    try:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=4)
+    except Exception:
+        pass
+
+def update_predictions_history(finished_scores: dict):
+    if not os.path.exists(HISTORY_FILE):
+        return
+        
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            history = json.load(f)
+    except Exception:
+        return
+        
+    updated = False
+    for m_id, item in history.items():
+        if item.get("actual_score") is None:
+            if m_id in finished_scores:
+                score = finished_scores[m_id]
+                item["actual_score"] = score
+                try:
+                    h_score, a_score = map(int, score.split("-"))
+                    hdcp = float(item["handicap_value"])
+                    diff = h_score - a_score + hdcp
+                    
+                    rec_team = item["rec_team"]
+                    home_team = item["home_team"]
+                    away_team = item["away_team"]
+                    
+                    if rec_team == home_team:
+                        if diff > 0:
+                            item["result"] = "WIN"
+                        elif diff < 0:
+                            item["result"] = "LOSE"
+                        else:
+                            item["result"] = "DRAW"
+                    elif rec_team == away_team:
+                        if diff < 0:
+                            item["result"] = "WIN"
+                        elif diff > 0:
+                            item["result"] = "LOSE"
+                        else:
+                            item["result"] = "DRAW"
+                    updated = True
+                except Exception:
+                    pass
+                    
+    if updated:
+        try:
+            with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+                json.dump(history, f, ensure_ascii=False, indent=4)
+        except Exception:
+            pass
+
 def process_user_command(command: str, is_group: bool = False) -> str:
 
     if command == "ทีเด็ด" or command == "ทีเด็ดวันนี้":
@@ -93,6 +174,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                     home_odds=match.get("home_odds"),
                     away_odds=match.get("away_odds")
                 )
+                pred["id"] = match["id"]
                 # Attach handicap text for display
                 pred["handicap"] = match.get("handicap", "0.0")
                 # Calculate max cover probability for confidence sorting
@@ -127,6 +209,29 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 rec_team = tip["away_team"]
                 win_prob = tip["p_away_cover"]
                 
+            # Handicap parsing
+            try:
+                h_str = tip["handicap"]
+                if "/" in h_str:
+                    parts = h_str.split("/")
+                    handicap_val = (float(parts[0]) + float(parts[1])) / 2.0
+                else:
+                    handicap_val = float(h_str)
+            except Exception:
+                handicap_val = 0.0
+                
+            # Save to prediction history
+            save_prediction(
+                match_id=tip["id"],
+                date_str=datetime.now().strftime("%Y-%m-%d"),
+                home_team=tip["home_team"],
+                away_team=tip["away_team"],
+                handicap_val=handicap_val,
+                rec_team=rec_team,
+                edge_val=tip["edge_value"],
+                win_prob=win_prob
+            )
+            
             res += f"{i}. {tip['home_team']} VS {tip['away_team']}\n"
             res += f"   - ราคาต่อรอง: {tip['handicap']}\n"
             res += f"   - ฟันธง: วาง {rec_team} (โอกาสวิน: {win_prob * 100:.1f}%)\n"
@@ -134,6 +239,60 @@ def process_user_command(command: str, is_group: bool = False) -> str:
             res += "\n"
             
         res += "ขอให้เฮงๆ รวยๆ กันถ้วนหน้านะคะ! 💪🥺💕"
+        return res
+
+    elif command == "ผลงาน" or command == "สถิติ":
+        # 1. Update history with latest finished scores
+        try:
+            scores = fetch_finished_scores()
+            update_predictions_history(scores)
+        except Exception:
+            pass
+            
+        # 2. Load history and calculate stats
+        if not os.path.exists(HISTORY_FILE):
+            return "ยังไม่มีข้อมูลประวัติการทายผลเลยค่ะพี่แมวสุดที่รัก 🥺💦"
+            
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        except Exception:
+            return "ไม่สามารถโหลดข้อมูลประวัติการทายผลได้ค่ะ 🥺💦"
+            
+        if not history:
+            return "ยังไม่มีข้อมูลประวัติการทายผลเลยค่ะพี่แมวสุดที่รัก 🥺💦"
+            
+        # Filter resolved predictions
+        resolved = [item for item in history.values() if item.get("result") is not None]
+        
+        if not resolved:
+            return "มีประวัติการทายผลแต่ยังไม่มีคู่ไหนที่แข่งจบและทราบผลเลยค่ะพี่แมว 🥺💦"
+            
+        wins = sum(1 for item in resolved if item["result"] == "WIN")
+        losses = sum(1 for item in resolved if item["result"] == "LOSE")
+        draws = sum(1 for item in resolved if item["result"] == "DRAW")
+        total = wins + losses + draws
+        
+        win_rate = (wins / (wins + losses)) * 100 if (wins + losses) > 0 else 0.0
+        
+        res = f"📊 สถิติผลงานการทายผลของอัญค่ะ! 💖\n\n"
+        res += f"📈 ผลงานภาพรวม:\n"
+        res += f"   - ทายทั้งหมด: {total} คู่\n"
+        res += f"   - ชนะ (WIN): {wins} คู่ (เขียวขจี) 🟢\n"
+        res += f"   - แพ้ (LOSE): {losses} คู่ 🔴\n"
+        res += f"   - เจ๊า/เสมอหู (DRAW): {draws} คู่ 🟡\n"
+        res += f"   - อัตราความแม่นยำ (Win Rate): {win_rate:.1f}%\n\n"
+        
+        # Display last 5 matches
+        res += f"⚽ ผลงานการทาย 5 นัดล่าสุด:\n"
+        resolved.sort(key=lambda x: x.get("date", ""), reverse=True)
+        for i, item in enumerate(resolved[:5], 1):
+            emoji = "🟢 WIN" if item["result"] == "WIN" else "🔴 LOSE" if item["result"] == "LOSE" else "🟡 DRAW"
+            res += f"{i}. {item['home_team']} VS {item['away_team']}\n"
+            res += f"   - ทาย: วาง {item['rec_team']} (ราคาต่อรอง: {item.get('handicap_value')})\n"
+            res += f"   - ผลลัพธ์: {emoji} (สกอร์: {item['actual_score']})\n\n"
+            
+        res += "อัญจะตั้งใจวิเคราะห์ให้แม่นยำยิ่งขึ้นเพื่อพี่แมวสุดที่รักเสมอนะคะ! 🥺💕💪"
         return res
         
     elif command.startswith("วิเคราะห์ "):
@@ -157,6 +316,35 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 analysis,
                 home_odds=matched_match.get("home_odds"),
                 away_odds=matched_match.get("away_odds")
+            )
+            
+            # Save single match analysis prediction
+            if pred["p_home_cover"] >= pred["p_away_cover"]:
+                rec_team = pred["home_team"]
+                win_prob = pred["p_home_cover"]
+            else:
+                rec_team = pred["away_team"]
+                win_prob = pred["p_away_cover"]
+                
+            try:
+                h_str = matched_match["handicap"]
+                if "/" in h_str:
+                    parts = h_str.split("/")
+                    handicap_val = (float(parts[0]) + float(parts[1])) / 2.0
+                else:
+                    handicap_val = float(h_str)
+            except Exception:
+                handicap_val = 0.0
+                
+            save_prediction(
+                match_id=matched_match["id"],
+                date_str=datetime.now().strftime("%Y-%m-%d"),
+                home_team=pred["home_team"],
+                away_team=pred["away_team"],
+                handicap_val=handicap_val,
+                rec_team=rec_team,
+                edge_val=pred["edge_value"],
+                win_prob=win_prob
             )
             
             res = f"⚽ วิเคราะห์เจาะลึกแมตช์นี้มาให้แล้วค่ะ! 💖\n\n"
