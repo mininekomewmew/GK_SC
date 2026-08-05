@@ -47,6 +47,26 @@ class TestIntegration(unittest.TestCase):
         res = process_user_command("ทีเด็ด", is_group=False)
         self.assertIn("โอกาสชนะแต้มต่อสูงสุดวันนี้ค่ะ", res)
 
+    @patch('app.main.fetch_today_matches')
+    @patch('app.main.fetch_match_analysis')
+    @patch('app.main.fetch_polball_analysis')
+    def test_analysis_command_with_polball(self, mock_polball, mock_analysis, mock_matches):
+        mock_matches.return_value = [
+            {"id": "1", "time": "22:00", "home_team": "Team A", "away_team": "Team B", "handicap": "0.25"}
+        ]
+        mock_analysis.return_value = {
+            "gameInfo": {"taname": "Team A", "tbname": "Team B", "handicap": "0.25"},
+            "gameTeamHistory": {}
+        }
+        mock_polball.return_value = {
+            "tip": "รอง Team B",
+            "score": "เสมอ 1-1"
+        }
+        
+        res = process_user_command("วิเคราะห์ Team A", is_group=False)
+        self.assertIn("ทรรศนะจากเว็บ Polball", res)
+        self.assertIn("รอง Team B", res)
+
     @patch('app.main.save_group_id')
     @patch('app.main.verify_signature', return_value=True)
     def test_webhook_saves_group_id_on_message(self, mock_verify, mock_save):

@@ -176,7 +176,7 @@ def fetch_match_analysis(match_id: str) -> dict:
     html_content = response.text
     
     # ponytail: gamePrediction is not trustworthy, so we exclude it.
-    vars_to_extract = ["gameInfo", "gameTeamHistory"]
+    vars_to_extract = ["gameInfo", "gameTeamHistory", "gamehistory"]
     result = {}
     
     for var_name in vars_to_extract:
@@ -185,4 +185,80 @@ def fetch_match_analysis(match_id: str) -> dict:
     if result:
         set_cached(cache_key, result, 300)
     return result
+
+def fetch_polball_analysis(home_team: str, away_team: str) -> dict:
+    cache_key = "polball_home"
+    html_content = get_cached(cache_key)
+    if html_content is None:
+        try:
+            url = "https://www.polball.club/"
+            resp = requests.get(url, headers=HEADERS, timeout=10)
+            if resp.status_code == 200:
+                html_content = resp.text
+                set_cached(cache_key, html_content, 600)  # 10 minutes cache
+        except Exception:
+            pass
+            
+    if not html_content:
+        return None
+        
+    try:
+        tree = html.fromstring(html_content)
+        links = tree.xpath("//a")
+        matched_url = None
+        
+        def clean_team_name(name: str) -> str:
+            name = re.sub(r'\[.*?\]', '', name)  # Remove [...]
+            name = re.sub(r'\(.*?\)', '', name)  # Remove (...)
+            return name.strip().lower()
+            
+        h_clean = clean_team_name(home_team)
+        a_clean = clean_team_name(away_team)
+        
+        for l in links:
+            href = l.attrib.get("href", "")
+            if not href:
+                continue
+            text_content = " ".join([t.strip() for t in l.xpath(".//text()") if t.strip()]).lower()
+            # Check if it is a match analysis link
+            if "วิเคราะห์บอล" in text_content or "-vs-" in text_content or "vs" in href or "วิเคราะห์บอล" in href:
+                if h_clean and (h_clean in text_content or h_clean in href):
+                    matched_url = href
+                    break
+                if a_clean and (a_clean in text_content or a_clean in href):
+                    matched_url = href
+                    break
+                
+        if not matched_url:
+            return None
+            
+        detail_key = f"polball_detail_{matched_url}"
+        detail_html = get_cached(detail_key)
+        if detail_html is None:
+            resp = requests.get(matched_url, headers=HEADERS, timeout=10)
+            if resp.status_code == 200:
+                detail_html = resp.text
+                set_cached(detail_key, detail_html, 600)
+                
+        if not detail_html:
+            return None
+            
+        detail_tree = html.fromstring(detail_html)
+        p_nodes = detail_tree.xpath("//p | //blockquote | //div[contains(@class, 'entry-content')]")
+        
+        pol_tip = None
+        pol_score = None
+        for p in p_nodes:
+            text_content = " ".join([t.strip() for t in p.xpath(".//text()") if t.strip()])
+            if "ทีเด็ดบอล :" in text_content:
+                pol_tip = text_content.replace("ทีเด็ดบอล :", "").strip()
+            elif "ผลที่คาด :" in text_content:
+                pol_score = text_content.replace("ผลที่คาด :", "").strip()
+                
+        if pol_tip or pol_score:
+            return {"tip": pol_tip or "ไม่มีข้อมูล", "score": pol_score or "ไม่มีข้อมูล"}
+    except Exception:
+        pass
+        
+    return None
 

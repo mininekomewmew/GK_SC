@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from app.scraper import fetch_match_analysis
 
 class TestScraper(unittest.TestCase):
@@ -56,6 +56,35 @@ class TestScraper(unittest.TestCase):
         clear_cache()
         res3 = fetch_today_matches()
         self.assertEqual(len(res3), 0)
+
+    @patch('app.scraper.requests.get')
+    def test_fetch_polball_analysis(self, mock_get):
+        from app.scraper import fetch_polball_analysis, clear_cache
+        clear_cache()
+        
+        mock_home = MagicMock()
+        mock_home.status_code = 200
+        mock_home.text = """
+        <html>
+            <a href="https://www.polball.club/123/ผลบอล-วิเคราะห์บอล-เอจีเอฟ-อาร์ฮุส--vs--ซาบาห์">วิเคราะห์บอล : เอจีเอฟ อาร์ฮุส -vs- ซาบาห์</a>
+        </html>
+        """
+        
+        mock_detail = MagicMock()
+        mock_detail.status_code = 200
+        mock_detail.text = """
+        <html>
+            <p>ทีเด็ดบอล : รอง ซาบาห์</p>
+            <p>ผลที่คาด : เสมอ 1-1</p>
+        </html>
+        """
+        
+        mock_get.side_effect = [mock_home, mock_detail]
+        
+        res = fetch_polball_analysis("อาร์ฮุส", "ซาบาห์")
+        self.assertIsNotNone(res)
+        self.assertEqual(res["tip"], "รอง ซาบาห์")
+        self.assertEqual(res["score"], "เสมอ 1-1")
 
 if __name__ == '__main__':
     unittest.main()

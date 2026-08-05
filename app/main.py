@@ -7,7 +7,7 @@ load_dotenv()
 from fastapi import FastAPI, Request, Header, HTTPException
 
 from app.line_bot import verify_signature, reply_message, push_message
-from app.scraper import fetch_today_matches, fetch_match_analysis
+from app.scraper import fetch_today_matches, fetch_match_analysis, fetch_polball_analysis
 from app.model import calculate_prediction
 
 app = FastAPI(title="Football Prediction Bot")
@@ -166,6 +166,13 @@ def process_user_command(command: str, is_group: bool = False) -> str:
             res += f"   - โอกาสทีมเยือนชนะ: {pred['p_away'] * 100:.1f}%\n\n"
             res += f"🎯 วิเคราะห์จากโมเดลคณิตศาสตร์:\n"
             res += f"   - {pred['value_recommendation']}\n\n"
+            
+            pol_analysis = fetch_polball_analysis(pred['home_team'], pred['away_team'])
+            if pol_analysis:
+                res += f"💡 ทรรศนะจากเว็บ Polball:\n"
+                res += f"   - ฟันธง: {pol_analysis['tip']}\n"
+                res += f"   - ผลที่คาด: {pol_analysis['score']}\n\n"
+                
             res += "เอาข้อมูลสถิติประวัติ 20 นัดมาวิเคราะห์ให้อย่างดี ขอให้โชคดีสมหวังน้าาา~ 🥺💕💪"
             return res
         except Exception as e:

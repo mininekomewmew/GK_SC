@@ -8,7 +8,10 @@ class TestModel(unittest.TestCase):
                 "taname": "Team A",
                 "tbname": "Team B",
                 "handicap": "0.25",
-                "updatedtime": "04/08/2026"
+                "updatedtime": "04/08/2026",
+                "neutral": 0,
+                "taid": 1,
+                "tbid": 2
             },
             "gameTeamHistory": {
                 "A": {
@@ -28,9 +31,13 @@ class TestModel(unittest.TestCase):
                     }
                 }
             },
-            "gamePrediction": {
-                "p": "เสมอ",
-                "ct": "ฟอร์มสูสี"
+            "gamehistory": {
+                "historymatch": {
+                    "aid": [1, 2],
+                    "bid": [2, 1],
+                    "liveA": [2, 1],
+                    "liveB": [1, 3]
+                }
             }
         }
         result = calculate_prediction(mock_analysis)
@@ -48,7 +55,7 @@ class TestModel(unittest.TestCase):
                 "updatedtime": "04/08/2026"
             },
             "gameTeamHistory": {},
-            "gamePrediction": {}
+            "gamehistory": {}
         }
         # Pass Home Odds = 1.25 and Away Odds = 0.72
         result = calculate_prediction(mock_analysis, home_odds=1.25, away_odds=0.72)

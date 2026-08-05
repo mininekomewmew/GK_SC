@@ -54,6 +54,40 @@ def calculate_prediction(analysis: dict, home_odds: float = None, away_odds: flo
     goals_scored_a, goals_conceded_a = parse_team_goals(history_a, home_id)
     goals_scored_b, goals_conceded_b = parse_team_goals(history_b, away_id)
 
+    # 1.5 Parse direct Head-to-Head (H2H) history
+    game_history = analysis.get("gamehistory", {})
+    h2h_data = game_history.get("historymatch", {}) if game_history else {}
+    h2h_scored_a = []
+    h2h_scored_b = []
+    
+    if h2h_data and "liveA" in h2h_data and "liveB" in h2h_data:
+        aids = h2h_data.get("aid", [])
+        bids = h2h_data.get("bid", [])
+        live_a = h2h_data.get("liveA", [])
+        live_b = h2h_data.get("liveB", [])
+        
+        for i in range(len(live_a)):
+            try:
+                hg = int(live_a[i])
+                ag = int(live_b[i])
+                aid = aids[i] if i < len(aids) else 0
+                
+                if aid == home_id:
+                    h2h_scored_a.append(hg)
+                    h2h_scored_b.append(ag)
+                else:
+                    h2h_scored_a.append(ag)
+                    h2h_scored_b.append(hg)
+            except (ValueError, TypeError, IndexError):
+                continue
+
+    h2h_weight = 0.0
+    h2h_avg_a = 0.0
+    h2h_avg_b = 0.0
+    if h2h_scored_a:
+        h2h_avg_a = sum(h2h_scored_a) / len(h2h_scored_a)
+        h2h_avg_b = sum(h2h_scored_b) / len(h2h_scored_b)
+        h2h_weight = 0.20 # 20% weight to direct H2H
     
     # 2. Time-decay weighting (gamma = 0.05)
     def calculate_weighted_average(goals_list: list) -> float:
@@ -81,8 +115,25 @@ def calculate_prediction(analysis: dict, home_odds: float = None, away_odds: flo
     attack_b = avg_scored_b / baseline if avg_scored_b > 0 else 1.0
     defense_b = avg_conceded_b / baseline if avg_conceded_b > 0 else 1.0
     
-    home_xg = attack_a * defense_b * baseline
-    away_xg = attack_b * defense_a * baseline
+    home_xg_poisson = attack_a * defense_b * baseline
+    away_xg_poisson = attack_b * defense_a * baseline
+    
+    # Apply Home Advantage (+10%/-10%) unless it's neutral ground
+    is_neutral = int(game_info.get("neutral") or 0) == 1
+    if not is_neutral and "(N)" in game_info.get("taname", ""):
+        is_neutral = True
+        
+    if not is_neutral:
+        home_xg_poisson *= 1.10
+        away_xg_poisson *= 0.90
+        
+    # Blend with H2H averages
+    if h2h_weight > 0:
+        home_xg = (1.0 - h2h_weight) * home_xg_poisson + h2h_weight * h2h_avg_a
+        away_xg = (1.0 - h2h_weight) * away_xg_poisson + h2h_weight * h2h_avg_b
+    else:
+        home_xg = home_xg_poisson
+        away_xg = away_xg_poisson
     
     # 4. Generate exact score grid probabilities and derive W/D/L
     p_home_win = 0.0
