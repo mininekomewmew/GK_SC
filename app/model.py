@@ -5,6 +5,18 @@ def poisson_probability(lmbda: float, k: int) -> float:
         return 1.0 if k == 0 else 0.0
     return (math.exp(-lmbda) * (lmbda ** k)) / math.factorial(k)
 
+def parse_handicap(handicap_str: str) -> float:
+    if not handicap_str:
+        return 0.0
+    try:
+        clean_str = handicap_str.replace("เสมอ", "0.0").replace(" ", "")
+        if "/" in clean_str:
+            parts = clean_str.split("/")
+            return (float(parts[0]) + float(parts[1])) / 2.0
+        return float(clean_str)
+    except Exception:
+        return 0.0
+
 def calculate_prediction(analysis: dict, home_odds: float = None, away_odds: float = None) -> dict:
     game_info = analysis.get("gameInfo", {})
     team_history = analysis.get("gameTeamHistory", {})
@@ -166,14 +178,7 @@ def calculate_prediction(analysis: dict, home_odds: float = None, away_odds: flo
     # In general, if handicap starts with - (e.g. -0.25), then home gives away goals.
     # If it is positive, home receives goals.
     # Let's clean the handicap string.
-    try:
-        if "/" in handicap_str:
-            parts = handicap_str.split("/")
-            handicap_val = (float(parts[0]) + float(parts[1])) / 2.0
-        else:
-            handicap_val = float(handicap_str)
-    except Exception:
-        handicap_val = 0.0
+    handicap_val = parse_handicap(handicap_str)
         
     # Calculate probability of home team covering handicap
     # Home covers if home_score + handicap > away_score.

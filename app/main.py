@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, Header, HTTPException
 
 from app.line_bot import verify_signature, reply_message, push_message
 from app.scraper import fetch_today_matches, fetch_match_analysis, fetch_polball_analysis, fetch_finished_scores
-from app.model import calculate_prediction
+from app.model import calculate_prediction, parse_handicap
 
 app = FastAPI(title="Football Prediction Bot")
 
@@ -210,15 +210,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 win_prob = tip["p_away_cover"]
                 
             # Handicap parsing
-            try:
-                h_str = tip["handicap"]
-                if "/" in h_str:
-                    parts = h_str.split("/")
-                    handicap_val = (float(parts[0]) + float(parts[1])) / 2.0
-                else:
-                    handicap_val = float(h_str)
-            except Exception:
-                handicap_val = 0.0
+            handicap_val = parse_handicap(tip["handicap"])
                 
             # Save to prediction history
             save_prediction(
@@ -326,15 +318,8 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 rec_team = pred["away_team"]
                 win_prob = pred["p_away_cover"]
                 
-            try:
-                h_str = matched_match["handicap"]
-                if "/" in h_str:
-                    parts = h_str.split("/")
-                    handicap_val = (float(parts[0]) + float(parts[1])) / 2.0
-                else:
-                    handicap_val = float(h_str)
-            except Exception:
-                handicap_val = 0.0
+            # Handicap parsing
+            handicap_val = parse_handicap(matched_match["handicap"])
                 
             save_prediction(
                 match_id=matched_match["id"],
