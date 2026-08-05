@@ -114,6 +114,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 pred["handicap"] = match.get("handicap", "0.0")
                 # Calculate max cover probability for confidence sorting
                 pred["max_prob"] = max(pred["p_home_cover"], pred["p_away_cover"])
+                pred["time"] = match["time"]
                 results_list.append(pred)
             except Exception:
                 continue
@@ -159,10 +160,13 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 win_prob=win_prob
             )
             
-            res += f"{i}. {tip['home_team']} VS {tip['away_team']}\n"
-            res += f"   - ราคาต่อรอง: {tip['handicap']}\n"
-            res += f"   - ฟันธง: 🔮 พลังเวทชี้เป้า วาง {rec_team}! (โอกาสวินแต้มต่อ: {win_prob * 100:.1f}%) ⚡\n"
-            res += "\n"
+            match_date = tip.get("date", "")
+            date_display = match_date[:5] if match_date else ""
+            time_display = tip.get("time", "")
+            datetime_str = f" | ⏰ {date_display} ({time_display})" if date_display else f" | ⏰ {time_display}"
+            
+            res += f"{i}. {tip['home_team']} VS {tip['away_team']}{datetime_str}\n"
+            res += f"   - 🔮 วาง {rec_team}! (โอกาสวินแต้มต่อ: {win_prob * 100:.1f}%) | ราคา: {tip['handicap']}\n\n"
             
         res += "ขอให้เฮงๆ รวยๆ กันถ้วนหน้านะคะ! 💪🥺💕"
         return res
