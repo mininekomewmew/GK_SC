@@ -101,17 +101,24 @@ def process_user_command(command: str, is_group: bool = False) -> str:
             except Exception:
                 continue
                 
-        if not results_list:
-            return "วันนี้ไม่มีข้อมูลคู่วิเคราะห์น้าาา 🥺💦"
+        # Filter to only the matches that are worth betting on (is_best_tip = True)
+        best_tips = [tip for tip in results_list if tip["is_best_tip"]]
+        
+        if not best_tips:
+            return "วันนี้วิเคราะห์แล้วยังไม่มีคู่ที่ค่าน้ำคุ้มค่าเป็นพิเศษ (Value Edge >= 5%) น้าาา 🥺💦 ลองพิมพ์ 'วิเคราะห์ [ชื่อทีม]' เพื่อดูสถิติรายคู่ได้เลยค่ะ 💖"
             
         # Sort by cover probability descending
-        results_list.sort(key=lambda x: x["max_prob"], reverse=True)
+        best_tips.sort(key=lambda x: x["max_prob"], reverse=True)
         
-        # Select top 4-7 matches
-        selected_count = min(7, len(results_list))
-        selected_tips = results_list[:selected_count]
+        # Cap at 7 matches
+        selected_tips = best_tips[:7]
+        selected_count = len(selected_tips)
         
-        res = f"🌟 คัด {selected_count} คู่เด่นโอกาสชนะแต้มต่อสูงสุดวันนี้ค่ะ! 💖\n\n"
+        if selected_count >= 3:
+            res = f"🌟 ทีเด็ดชุด \"สเต็ป {selected_count}\" โอกาสชนะราคาคุ้มค่าสูงสุดวันนี้ค่ะ! 💖 (Value Edge >= 5%)\n\n"
+        else:
+            res = f"🌟 คัด {selected_count} คู่เด่นน่าเบ็ทที่สุดวันนี้ค่ะ! 💖 (Value Edge >= 5%)\n\n"
+            
         for i, tip in enumerate(selected_tips, 1):
             if tip["p_home_cover"] >= tip["p_away_cover"]:
                 rec_team = tip["home_team"]
@@ -123,8 +130,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
             res += f"{i}. {tip['home_team']} VS {tip['away_team']}\n"
             res += f"   - ราคาต่อรอง: {tip['handicap']}\n"
             res += f"   - ฟันธง: วาง {rec_team} (โอกาสวิน: {win_prob * 100:.1f}%)\n"
-            if tip["is_best_tip"]:
-                res += f"   - [ราคาคุ้มค่าพิเศษ! มี Value Edge +{tip['edge_value'] * 100:.1f}%]\n"
+            res += f"   - [ค่าน้ำคุ้มค่าพิเศษ! มี Value Edge +{tip['edge_value'] * 100:.1f}%]\n"
             res += "\n"
             
         res += "ขอให้เฮงๆ รวยๆ กันถ้วนหน้านะคะ! 💪🥺💕"
