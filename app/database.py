@@ -8,7 +8,7 @@ def get_db_path() -> str:
 def get_db_connection(db_path: str = None):
     if db_path is None:
         db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=15.0)
     conn.row_factory = sqlite3.Row
     return conn
 
