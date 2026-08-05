@@ -15,6 +15,11 @@ venv.bak/
 # Local data storage
 groups.txt
 predictions_history.json
+predictions_history.json.bak
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
 
 # IDEs and editors
 .vscode/

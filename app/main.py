@@ -10,6 +10,13 @@ from fastapi import FastAPI, Request, Header, HTTPException
 from app.line_bot import verify_signature, reply_message, push_message
 from app.scraper import fetch_today_matches, fetch_match_analysis, fetch_polball_analysis, fetch_finished_scores
 from app.model import calculate_prediction, parse_handicap
+from app.database import (
+    init_db,
+    save_prediction_db as save_prediction,
+    update_predictions_db as update_predictions_history,
+    get_stats_db,
+    get_recent_predictions_db
+)
 
 app = FastAPI(title="Football Prediction Bot")
 
@@ -77,85 +84,7 @@ async def webhook(request: Request, x_line_signature: str = Header(None)):
                 
     return "OK"
 
-HISTORY_FILE = "predictions_history.json"
-
-def save_prediction(match_id: str, date_str: str, home_team: str, away_team: str, handicap_val: float, rec_team: str, edge_val: float, win_prob: float):
-    history = {}
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                history = json.load(f)
-        except Exception:
-            pass
-            
-    history[match_id] = {
-        "id": match_id,
-        "date": date_str,
-        "home_team": home_team,
-        "away_team": away_team,
-        "handicap_value": handicap_val,
-        "rec_team": rec_team,
-        "edge_value": edge_val,
-        "win_prob": win_prob,
-        "actual_score": history.get(match_id, {}).get("actual_score"),
-        "result": history.get(match_id, {}).get("result"),
-    }
-    
-    try:
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(history, f, ensure_ascii=False, indent=4)
-    except Exception:
-        pass
-
-def update_predictions_history(finished_scores: dict):
-    if not os.path.exists(HISTORY_FILE):
-        return
-        
-    try:
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            history = json.load(f)
-    except Exception:
-        return
-        
-    updated = False
-    for m_id, item in history.items():
-        if item.get("actual_score") is None:
-            if m_id in finished_scores:
-                score = finished_scores[m_id]
-                item["actual_score"] = score
-                try:
-                    h_score, a_score = map(int, score.split("-"))
-                    hdcp = float(item["handicap_value"])
-                    diff = h_score - a_score + hdcp
-                    
-                    rec_team = item["rec_team"]
-                    home_team = item["home_team"]
-                    away_team = item["away_team"]
-                    
-                    if rec_team == home_team:
-                        if diff > 0:
-                            item["result"] = "WIN"
-                        elif diff < 0:
-                            item["result"] = "LOSE"
-                        else:
-                            item["result"] = "DRAW"
-                    elif rec_team == away_team:
-                        if diff < 0:
-                            item["result"] = "WIN"
-                        elif diff > 0:
-                            item["result"] = "LOSE"
-                        else:
-                            item["result"] = "DRAW"
-                    updated = True
-                except Exception:
-                    pass
-                    
-    if updated:
-        try:
-            with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-                json.dump(history, f, ensure_ascii=False, indent=4)
-        except Exception:
-            pass
+# Predictions are now handled using SQLite DB via app/database.py
 
 def process_user_command(command: str, is_group: bool = False) -> str:
 
@@ -241,49 +170,37 @@ def process_user_command(command: str, is_group: bool = False) -> str:
         except Exception:
             pass
             
-        # 2. Load history and calculate stats
-        if not os.path.exists(HISTORY_FILE):
-            return "ยังไม่มีข้อมูลประวัติการทายผลเลยนะคะ 🥺💦"
-            
+        # 2. Get stats from DB
         try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                history = json.load(f)
+            stats = get_stats_db()
         except Exception:
             return "ไม่สามารถโหลดข้อมูลประวัติการทายผลได้ค่ะ 🥺💦"
             
-        if not history:
+        if not stats:
             return "ยังไม่มีข้อมูลประวัติการทายผลเลยนะคะ 🥺💦"
             
-        # Filter resolved predictions
-        resolved = [item for item in history.values() if item.get("result") is not None]
-        
-        if not resolved:
-            return "มีประวัติการทายผลแต่ยังไม่มีคู่ไหนที่แข่งจบและทราบผลเลยนะคะ 🥺💦"
-            
-        wins = sum(1 for item in resolved if item["result"] == "WIN")
-        losses = sum(1 for item in resolved if item["result"] == "LOSE")
-        draws = sum(1 for item in resolved if item["result"] == "DRAW")
-        total = wins + losses + draws
-        
-        win_rate = (wins / (wins + losses)) * 100 if (wins + losses) > 0 else 0.0
-        
         res = f"📊 สถิติผลงานการทายผลของอัญค่ะ! 💖\n\n"
         res += f"📈 ผลงานภาพรวม:\n"
-        res += f"   - ทายทั้งหมด: {total} คู่\n"
-        res += f"   - ชนะ (WIN): {wins} คู่ (เขียวขจี) 🟢\n"
-        res += f"   - แพ้ (LOSE): {losses} คู่ 🔴\n"
-        res += f"   - เจ๊า/เสมอหู (DRAW): {draws} คู่ 🟡\n"
-        res += f"   - อัตราความแม่นยำ (Win Rate): {win_rate:.1f}%\n\n"
+        res += f"   - ทายทั้งหมด: {stats['total']} คู่\n"
+        res += f"   - ชนะ (WIN): {stats['wins']} คู่ (เขียวขจี) 🟢\n"
+        res += f"   - แพ้ (LOSE): {stats['losses']} คู่ 🔴\n"
+        res += f"   - เจ๊า/เสมอหู (DRAW): {stats['draws']} คู่ 🟡\n"
+        res += f"   - อัตราความแม่นยำ (Win Rate): {stats['win_rate']:.1f}%\n\n"
         
-        # Display last 5 matches
-        res += f"⚽ ผลงานการทาย 5 นัดล่าสุด:\n"
-        resolved.sort(key=lambda x: x.get("date", ""), reverse=True)
-        for i, item in enumerate(resolved[:5], 1):
-            emoji = "🟢 WIN" if item["result"] == "WIN" else "🔴 LOSE" if item["result"] == "LOSE" else "🟡 DRAW"
-            res += f"{i}. {item['home_team']} VS {item['away_team']}\n"
-            res += f"   - ทาย: วาง {item['rec_team']} (ราคาต่อรอง: {item.get('handicap_value')})\n"
-            res += f"   - ผลลัพธ์: {emoji} (สกอร์: {item['actual_score']})\n\n"
+        # 3. Get last 5 matches
+        try:
+            recent = get_recent_predictions_db(5)
+        except Exception:
+            recent = []
             
+        if recent:
+            res += f"⚽ ผลงานการทาย 5 นัดล่าสุด:\n"
+            for i, item in enumerate(recent, 1):
+                emoji = "🟢 WIN" if item["result"] == "WIN" else "🔴 LOSE" if item["result"] == "LOSE" else "🟡 DRAW"
+                res += f"{i}. {item['home_team']} VS {item['away_team']}\n"
+                res += f"   - ทาย: วาง {item['rec_team']} (ราคาต่อรอง: {item['handicap_value']})\n"
+                res += f"   - ผลลัพธ์: {emoji} (สกอร์: {item['actual_score']})\n\n"
+                
         res += "อัญจะตั้งใจวิเคราะห์ให้แม่นยำยิ่งขึ้นเสมอนะคะ! 🥺💕💪"
         return res
         
@@ -387,6 +304,7 @@ async def scheduler_loop():
 
 @app.on_event("startup")
 async def startup_event():
+    init_db()
     asyncio.create_task(scheduler_loop())
 
 @app.post("/broadcast")

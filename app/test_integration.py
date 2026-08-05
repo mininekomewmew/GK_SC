@@ -7,11 +7,23 @@ from fastapi import HTTPException
 # Mock environment variables before importing app
 os.environ["LINE_CHANNEL_SECRET"] = "test_secret"
 os.environ["LINE_CHANNEL_ACCESS_TOKEN"] = "test_token"
+os.environ["DB_PATH"] = "test_integration.db"
 
 from app.main import webhook, process_user_command
 
 
 class TestIntegration(unittest.TestCase):
+    def setUp(self):
+        from app.database import init_db
+        init_db("test_integration.db")
+        
+    def tearDown(self):
+        if os.path.exists("test_integration.db"):
+            try:
+                os.remove("test_integration.db")
+            except Exception:
+                pass
+                
     def test_webhook_unauthorized(self):
         # Create a mock Request object
         mock_request = MagicMock()
@@ -70,27 +82,14 @@ class TestIntegration(unittest.TestCase):
     @patch('app.main.fetch_finished_scores')
     def test_performance_command(self, mock_finished_scores):
         mock_finished_scores.return_value = {"1": "1-2"}
-        from app.main import HISTORY_FILE, save_prediction
-        import os
+        from app.main import save_prediction
         
-        if os.path.exists(HISTORY_FILE):
-            try:
-                os.remove(HISTORY_FILE)
-            except Exception:
-                pass
-                
         save_prediction("1", "2026-08-05", "Team A", "Team B", -0.25, "Team B", 0.08, 0.55)
         
         res = process_user_command("ผลงาน", is_group=False)
         self.assertIn("สถิติผลงานการทายผล", res)
         self.assertIn("ชนะ (WIN): 1 คู่", res)
         self.assertIn("Team A VS Team B", res)
-        
-        if os.path.exists(HISTORY_FILE):
-            try:
-                os.remove(HISTORY_FILE)
-            except Exception:
-                pass
 
     @patch('app.main.save_group_id')
     @patch('app.main.verify_signature', return_value=True)
