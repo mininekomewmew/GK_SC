@@ -243,7 +243,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
             
         # 2. Load history and calculate stats
         if not os.path.exists(HISTORY_FILE):
-            return "ยังไม่มีข้อมูลประวัติการทายผลเลยค่ะพี่แมวสุดที่รัก 🥺💦"
+            return "ยังไม่มีข้อมูลประวัติการทายผลเลยนะคะ 🥺💦"
             
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -252,13 +252,13 @@ def process_user_command(command: str, is_group: bool = False) -> str:
             return "ไม่สามารถโหลดข้อมูลประวัติการทายผลได้ค่ะ 🥺💦"
             
         if not history:
-            return "ยังไม่มีข้อมูลประวัติการทายผลเลยค่ะพี่แมวสุดที่รัก 🥺💦"
+            return "ยังไม่มีข้อมูลประวัติการทายผลเลยนะคะ 🥺💦"
             
         # Filter resolved predictions
         resolved = [item for item in history.values() if item.get("result") is not None]
         
         if not resolved:
-            return "มีประวัติการทายผลแต่ยังไม่มีคู่ไหนที่แข่งจบและทราบผลเลยค่ะพี่แมว 🥺💦"
+            return "มีประวัติการทายผลแต่ยังไม่มีคู่ไหนที่แข่งจบและทราบผลเลยนะคะ 🥺💦"
             
         wins = sum(1 for item in resolved if item["result"] == "WIN")
         losses = sum(1 for item in resolved if item["result"] == "LOSE")
@@ -284,7 +284,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
             res += f"   - ทาย: วาง {item['rec_team']} (ราคาต่อรอง: {item.get('handicap_value')})\n"
             res += f"   - ผลลัพธ์: {emoji} (สกอร์: {item['actual_score']})\n\n"
             
-        res += "อัญจะตั้งใจวิเคราะห์ให้แม่นยำยิ่งขึ้นเพื่อพี่แมวสุดที่รักเสมอนะคะ! 🥺💕💪"
+        res += "อัญจะตั้งใจวิเคราะห์ให้แม่นยำยิ่งขึ้นเสมอนะคะ! 🥺💕💪"
         return res
         
     elif command.startswith("วิเคราะห์ "):
