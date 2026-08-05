@@ -73,7 +73,57 @@ def init_db(db_path: str = None, json_history_path: str = "predictions_history.j
         except Exception as e:
             print(f"Error during legacy JSON migration: {e}")
             
+    # Seed and repair the 7 target predictions from August 4th/5th
+    try:
+        seed_and_repair_yesterday_matches(conn)
+    except Exception as e:
+        print(f"Error seeding and repairing target matches: {e}")
+            
     conn.close()
+
+def seed_and_repair_yesterday_matches(conn):
+    seeds = [
+        # match_id, date, home_team, away_team, handicap_val, rec_team, edge_val, win_prob, actual_score, result
+        ("5033065", "2026-08-05", "แทมเปเร่ ยูไนเต็ด", "KPV คอคคูล่า", -2.25, "แทมเปเร่ ยูไนเต็ด", 0.05, 0.965, None, None),
+        ("5154353", "2026-08-04", "เลกาเนส", "อัล เรย์ยาน", -1.0, "อัล เรย์ยาน", 0.05, 0.960, "2-1", "DRAW"),
+        ("5149198", "2026-08-05", "อัล ไอน์", "ตูลูส", -0.75, "อัล ไอน์", 0.05, 0.958, None, None),
+        ("5154469", "2026-08-05", "ราชบุรี เอฟซี", "อีสเทอร์น เอ.เอ", -1.75, "ราชบุรี เอฟซี", 0.05, 0.918, None, None),
+        ("5145197", "2026-08-04", "นิวพอร์ต เคาน์ตี้", "เอเอส โรม่า", 2.25, "นิวพอร์ต เคาน์ตี้", 0.05, 0.900, "1-4", "LOSE"),
+        ("5097281", "2026-08-04", "นูเบลนเซ่", "แรนเจอร์ ทัลค่า", -0.25, "นูเบลนเซ่", 0.05, 0.879, "1-0", "WIN"),
+        ("5145188", "2026-08-04", "บีจี ปทุม ยูไนเต็ด", "แอสตัน วิลล่า", 1.75, "บีจี ปทุม ยูไนเต็ด", 0.05, 0.874, "1-3", "LOSE")
+    ]
+    cursor = conn.cursor()
+    for mid, date, home, away, hdcp, rec, edge, win_p, score, res in seeds:
+        cursor.execute("SELECT actual_score FROM predictions WHERE match_id = ?", (mid,))
+        row = cursor.fetchone()
+        if row is None:
+            cursor.execute("""
+                INSERT INTO predictions (match_id, date, home_team, away_team, handicap_value, rec_team, edge_val, win_prob, actual_score, result)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (mid, date, home, away, hdcp, rec, edge, win_p, score, res))
+        else:
+            act_score = row[0]
+            if act_score is None:
+                cursor.execute("""
+                    UPDATE predictions
+                    SET handicap_value = ?, rec_team = ?, win_prob = ?
+                    WHERE match_id = ?
+                """, (hdcp, rec, win_p, mid))
+            else:
+                try:
+                    h, a = map(int, act_score.split("-"))
+                    diff = h - a + hdcp
+                    if rec == home:
+                        new_res = "WIN" if diff > 0 else "LOSE" if diff < 0 else "DRAW"
+                    else:
+                        new_res = "WIN" if diff < 0 else "LOSE" if diff > 0 else "DRAW"
+                except Exception:
+                    new_res = res
+                cursor.execute("""
+                    UPDATE predictions
+                    SET handicap_value = ?, rec_team = ?, win_prob = ?, result = ?
+                    WHERE match_id = ?
+                """, (hdcp, rec, win_p, new_res, mid))
 
 def save_prediction_db(
     match_id: str,
