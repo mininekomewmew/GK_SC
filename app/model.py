@@ -248,5 +248,6 @@ def calculate_prediction(analysis: dict, home_odds: float = None, away_odds: flo
         "p_away_cover": round(p_away_cover, 4),
         "edge_value": round(max(edge_home, edge_away), 4),
         "value_recommendation": recommendation,
-        "is_best_tip": has_edge and max(edge_home, edge_away) >= 0.05
+        "is_best_tip": has_edge and max(edge_home, edge_away) >= 0.05,
+        "date": game_info.get("updatedtime")
     }

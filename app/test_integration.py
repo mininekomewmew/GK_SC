@@ -93,10 +93,10 @@ class TestIntegration(unittest.TestCase):
         mock_polball.return_value = None
         
         res_wi = process_user_command("วิ Team A", is_group=False)
-        self.assertIn("วิเคราะห์แมตช์วันนี้มาให้แล้วค่ะ", res_wi)
+        self.assertIn("วิเคราะห์แมตช์มาให้แล้วค่ะ", res_wi)
         
         res_vs = process_user_command("vs Team A", is_group=False)
-        self.assertIn("วิเคราะห์แมตช์วันนี้มาให้แล้วค่ะ", res_vs)
+        self.assertIn("วิเคราะห์แมตช์มาให้แล้วค่ะ", res_vs)
 
     @patch('app.main.fetch_finished_scores')
     def test_performance_command(self, mock_finished_scores):

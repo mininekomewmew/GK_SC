@@ -255,9 +255,13 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 win_prob=win_prob
             )
             
-            res = f"⚽ วิเคราะห์แมตช์วันนี้มาให้แล้วค่ะ! 💖\n\n"
+            match_date = pred.get("date")
+            res = f"⚽ วิเคราะห์แมตช์มาให้แล้วค่ะ! 💖\n\n"
             res += f"🏆 {pred['home_team']} VS {pred['away_team']}\n"
-            res += f"⏰ เวลาแข่งวันนี้: {matched_match['time']}\n"
+            if match_date:
+                res += f"⏰ วันเวลาแข่ง: {match_date} เวลา {matched_match['time']} น.\n"
+            else:
+                res += f"⏰ เวลาแข่ง: {matched_match['time']} น.\n"
             res += f"📈 ราคาต่อรองปัจจุบัน: {matched_match['handicap']}\n\n"
             
             res += f"🎯 ผลการวิเคราะห์จากโมเดล:\n"
