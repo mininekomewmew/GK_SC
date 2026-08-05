@@ -36,7 +36,7 @@ def fetch_today_matches() -> list:
     if cached is not None:
         return cached
 
-    url = "https://goal7.co/"
+    urls = ["https://goal7.co/", "https://goal7.co/ตารางบอลพรุ่งนี้/"]
     odds_url = "https://goal7.co/data/odds.txt"
     try:
         # Fetch odds map
@@ -48,67 +48,76 @@ def fetch_today_matches() -> list:
         except Exception:
             pass
 
-        response = requests.get(url, headers=HEADERS, timeout=10)
-        if response.status_code != 200:
-            return []
-        tree = html.fromstring(response.content)
         matches = []
-        # Extract matches from rows with class 'utable_tr'
-        rows = tree.xpath("//tr[@class='utable_tr']")
-        for row in rows:
-            row_id = row.attrib.get("id")
-            analysis_links = row.xpath(".//a[contains(@href, 'analyse/?id=')]/@href")
-            match_id = None
-            if analysis_links:
-                match_id = analysis_links[0].split("id=")[-1].strip()
-            if not match_id:
-                match_id = row_id
+        seen_ids = set()
+        
+        for url in urls:
+            try:
+                response = requests.get(url, headers=HEADERS, timeout=10)
+                if response.status_code != 200:
+                    continue
+                tree = html.fromstring(response.content)
+                rows = tree.xpath("//tr[@class='utable_tr']")
+                for row in rows:
+                    row_id = row.attrib.get("id")
+                    analysis_links = row.xpath(".//a[contains(@href, 'analyse/?id=')]/@href")
+                    match_id = None
+                    if analysis_links:
+                        match_id = analysis_links[0].split("id=")[-1].strip()
+                    if not match_id:
+                        match_id = row_id
+                    
+                    if not match_id or match_id in seen_ids:
+                        continue
+                        
+                    time_cols = row.xpath("./td[contains(@class, 'utable_f1')]/text()")
+                    time_str = time_cols[0].strip() if time_cols else ""
+                    
+                    home_cols = row.xpath("./td[contains(@class, 'utable_f2')]//span/text()")
+                    home_team = home_cols[0].strip() if home_cols else ""
+                    
+                    away_cols = row.xpath("./td[contains(@class, 'utable_f4')]//span/text()")
+                    away_team = away_cols[0].strip() if away_cols else ""
+                    
+                    # Detect favorite team to set handicap sign (home favorite is negative, away is positive)
+                    home_fav = bool(row.xpath("./td[contains(@class, 'utable_f2')]//span[contains(@class, 'ured')]"))
+                    odds_col = row.xpath("./td[contains(@class, 'classodds')]/text()")
+                    handicap_text = odds_col[0].strip() if odds_col else ""
+                    
+                    if home_fav and handicap_text and not handicap_text.startswith("-") and handicap_text != "เสมอ":
+                        handicap = "-" + handicap_text
+                    else:
+                        handicap = handicap_text
+                    
+                    # Extract live ID for odds mapping (row_id is the primary live_id)
+                    live_id = row_id
+                    if not live_id:
+                        live_id_el = row.xpath(".//input[@class='live_id']/@value")
+                        live_id = live_id_el[0].strip() if live_id_el else None
 
-            time_cols = row.xpath("./td[contains(@class, 'utable_f1')]/text()")
-            time_str = time_cols[0].strip() if time_cols else ""
-            
-            home_cols = row.xpath("./td[contains(@class, 'utable_f2')]//span/text()")
-            home_team = home_cols[0].strip() if home_cols else ""
-            
-            away_cols = row.xpath("./td[contains(@class, 'utable_f4')]//span/text()")
-            away_team = away_cols[0].strip() if away_cols else ""
-            
-            # Detect favorite team to set handicap sign (home favorite is negative, away is positive)
-            home_fav = bool(row.xpath("./td[contains(@class, 'utable_f2')]//span[contains(@class, 'ured')]"))
-            odds_col = row.xpath("./td[contains(@class, 'classodds')]/text()")
-            handicap_text = odds_col[0].strip() if odds_col else ""
-            
-            if home_fav and handicap_text and not handicap_text.startswith("-") and handicap_text != "เสมอ":
-                handicap = "-" + handicap_text
-            else:
-                handicap = handicap_text
-            
-            # Extract live ID for odds mapping (row_id is the primary live_id)
-            live_id = row_id
-            if not live_id:
-                live_id_el = row.xpath(".//input[@class='live_id']/@value")
-                live_id = live_id_el[0].strip() if live_id_el else None
+                    home_odds = None
+                    away_odds = None
+                    if live_id and live_id in odds_map:
+                        try:
+                            home_odds = float(odds_map[live_id].get("text1"))
+                            away_odds = float(odds_map[live_id].get("text3"))
+                        except (ValueError, TypeError, KeyError, AttributeError):
+                            pass
 
-            
-            home_odds = None
-            away_odds = None
-            if live_id and live_id in odds_map:
-                try:
-                    home_odds = float(odds_map[live_id].get("text1"))
-                    away_odds = float(odds_map[live_id].get("text3"))
-                except (ValueError, TypeError, KeyError, AttributeError):
-                    pass
+                    if match_id and home_team and away_team:
+                        seen_ids.add(match_id)
+                        matches.append({
+                            "id": match_id,
+                            "time": time_str,
+                            "home_team": home_team,
+                            "away_team": away_team,
+                            "handicap": handicap,
+                            "home_odds": home_odds,
+                            "away_odds": away_odds
+                        })
+            except Exception:
+                pass
 
-            if match_id and home_team and away_team:
-                matches.append({
-                    "id": match_id,
-                    "time": time_str,
-                    "home_team": home_team,
-                    "away_team": away_team,
-                    "handicap": handicap,
-                    "home_odds": home_odds,
-                    "away_odds": away_odds
-                })
         if matches:
             set_cached(cache_key, matches, 300)
         return matches

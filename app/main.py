@@ -119,8 +119,23 @@ def process_user_command(command: str, is_group: bool = False) -> str:
             except Exception:
                 continue
                 
-        # Filter to only the matches that are worth betting on (is_best_tip = True)
-        best_tips = [tip for tip in results_list if tip["is_best_tip"]]
+        # Filter to only the matches that are worth betting on (is_best_tip = True) and are today or in the future
+        best_tips = []
+        current_date = datetime.now().date()
+        for tip in results_list:
+            if not tip["is_best_tip"]:
+                continue
+            
+            match_date_str = tip.get("date")
+            if match_date_str:
+                try:
+                    date_part = match_date_str.split()[0]
+                    match_date = datetime.strptime(date_part, "%d/%m/%Y").date()
+                    if match_date < current_date:
+                        continue
+                except Exception:
+                    pass
+            best_tips.append(tip)
         
         if not best_tips:
             return "วันนี้วิเคราะห์แล้วยังไม่มีคู่ที่กระแสค่าน้ำคุ้มค่าความเสี่ยงเลยนะคะ 🥺💦 ลองพิมพ์ 'วิเคราะห์ [ชื่อทีม]' เพื่อส่องกระแสรายคู่ได้เลยค่ะ 💖"
