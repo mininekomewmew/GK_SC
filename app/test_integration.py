@@ -79,6 +79,25 @@ class TestIntegration(unittest.TestCase):
         self.assertIn("ทรรศนะจากเว็บ Polball", res)
         self.assertIn("รอง Team B", res)
 
+    @patch('app.main.fetch_today_matches')
+    @patch('app.main.fetch_match_analysis')
+    @patch('app.main.fetch_polball_analysis')
+    def test_analysis_command_aliases(self, mock_polball, mock_analysis, mock_matches):
+        mock_matches.return_value = [
+            {"id": "1", "time": "22:00", "home_team": "Team A", "away_team": "Team B", "handicap": "0.25"}
+        ]
+        mock_analysis.return_value = {
+            "gameInfo": {"taname": "Team A", "tbname": "Team B", "handicap": "0.25"},
+            "gameTeamHistory": {}
+        }
+        mock_polball.return_value = None
+        
+        res_wi = process_user_command("วิ Team A", is_group=False)
+        self.assertIn("วิเคราะห์แมตช์วันนี้มาให้แล้วค่ะ", res_wi)
+        
+        res_vs = process_user_command("vs Team A", is_group=False)
+        self.assertIn("วิเคราะห์แมตช์วันนี้มาให้แล้วค่ะ", res_vs)
+
     @patch('app.main.fetch_finished_scores')
     def test_performance_command(self, mock_finished_scores):
         mock_finished_scores.return_value = {"1": "1-2"}

@@ -87,6 +87,11 @@ async def webhook(request: Request, x_line_signature: str = Header(None)):
 # Predictions are now handled using SQLite DB via app/database.py
 
 def process_user_command(command: str, is_group: bool = False) -> str:
+    # Normalize command prefixes for match analysis to simplify typing
+    for prefix in ["วิเคราะห์ ", "วิ ", "เช็ค ", "เชค ", "v ", "vs "]:
+        if command.lower().startswith(prefix):
+            command = "วิเคราะห์ " + command[len(prefix):].strip()
+            break
 
     if command == "ทีเด็ด" or command == "ทีเด็ดวันนี้":
         matches = fetch_today_matches()
@@ -269,7 +274,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
             
     if is_group:
         return ""
-    return "ยังไม่เข้าใจคำสั่งนี้ค่ะ 🥺 ลองพิมพ์ 'ทีเด็ด' หรือ 'วิเคราะห์ [ชื่อทีม]' ดูน้าาา พร้อมลุยค่ะ 💖"
+    return "ยังไม่เข้าใจคำสั่งนี้ค่ะ 🥺 ลองพิมพ์ 'ทีเด็ด' หรือ 'วิ [ชื่อทีม]' / 'vs [ชื่อทีม]' ดูน้าาา พร้อมลุยค่ะ 💖"
 
 async def send_daily_tips():
     tips_text = process_user_command("ทีเด็ด")
