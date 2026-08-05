@@ -249,18 +249,12 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 win_prob=win_prob
             )
             
-            res = f"⚽ วิเคราะห์เจาะลึกแมตช์นี้มาให้แล้วค่ะ! 💖\n\n"
+            res = f"⚽ วิเคราะห์แมตช์วันนี้มาให้แล้วค่ะ! 💖\n\n"
             res += f"🏆 {pred['home_team']} VS {pred['away_team']}\n"
             res += f"⏰ เวลาแข่งวันนี้: {matched_match['time']}\n"
             res += f"📈 ราคาต่อรองปัจจุบัน: {matched_match['handicap']}\n\n"
-            res += f"📊 คาดการณ์จำนวนประตู (xG):\n"
-            res += f"   - เจ้าบ้าน {pred['home_team']}: {pred['home_xg']}\n"
-            res += f"   - ทีมเยือน {pred['away_team']}: {pred['away_xg']}\n\n"
-            res += f"🎲 ความน่าจะเป็นผลการแข่ง (1X2):\n"
-            res += f"   - โอกาสเจ้าบ้านชนะ: {pred['p_home'] * 100:.1f}%\n"
-            res += f"   - โอกาสเสมอ: {pred['p_draw'] * 100:.1f}%\n"
-            res += f"   - โอกาสทีมเยือนชนะ: {pred['p_away'] * 100:.1f}%\n\n"
-            res += f"🎯 วิเคราะห์จากโมเดลคณิตศาสตร์:\n"
+            
+            res += f"🎯 ผลการวิเคราะห์จากโมเดล:\n"
             res += f"   - {pred['value_recommendation']}\n\n"
             
             pol_analysis = fetch_polball_analysis(pred['home_team'], pred['away_team'])
@@ -269,7 +263,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 res += f"   - ฟันธง: {pol_analysis['tip']}\n"
                 res += f"   - ผลที่คาด: {pol_analysis['score']}\n\n"
                 
-            res += "เอาข้อมูลสถิติประวัติ 20 นัดมาวิเคราะห์ให้อย่างดี ขอให้โชคดีสมหวังน้าาา~ 🥺💕💪"
+            res += "ขอให้โชคดีสมหวังน้าาา~ 🥺💕💪"
             return res
         except Exception as e:
             return f"ขออภัยน้าาา ดึงข้อมูลวิเคราะห์คู่นี้ขัดข้อง: {str(e)} 🥺💦"
