@@ -116,7 +116,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
         best_tips = [tip for tip in results_list if tip["is_best_tip"]]
         
         if not best_tips:
-            return "วันนี้วิเคราะห์แล้วยังไม่มีคู่ที่ค่าน้ำคุ้มค่าเป็นพิเศษ (Value Edge >= 5%) น้าาา 🥺💦 ลองพิมพ์ 'วิเคราะห์ [ชื่อทีม]' เพื่อดูสถิติรายคู่ได้เลยค่ะ 💖"
+            return "วันนี้วิเคราะห์แล้วยังไม่มีคู่ที่กระแสค่าน้ำคุ้มค่าความเสี่ยงเลยนะคะ 🥺💦 ลองพิมพ์ 'วิเคราะห์ [ชื่อทีม]' เพื่อส่องกระแสรายคู่ได้เลยค่ะ 💖"
             
         # Sort by cover probability descending
         best_tips.sort(key=lambda x: x["max_prob"], reverse=True)
@@ -126,9 +126,9 @@ def process_user_command(command: str, is_group: bool = False) -> str:
         selected_count = len(selected_tips)
         
         if selected_count >= 3:
-            res = f"🌟 ทีเด็ดชุด \"สเต็ป {selected_count}\" โอกาสชนะราคาคุ้มค่าสูงสุดวันนี้ค่ะ! 💖 (Value Edge >= 5%)\n\n"
+            res = f"🔮 มนตราวิเคราะห์ชี้เป้า: ทีเด็ดชุด \"สเต็ป {selected_count}\" คัดเน้นๆ วันนี้ค่ะ! ⚡\n\n"
         else:
-            res = f"🌟 คัด {selected_count} คู่เด่นน่าเบ็ทที่สุดวันนี้ค่ะ! 💖 (Value Edge >= 5%)\n\n"
+            res = f"🔮 มนตราวิเคราะห์ชี้เป้า: คัด {selected_count} คู่เด่นน่าจัดที่สุดวันนี้ค่ะ! ⚡\n\n"
             
         for i, tip in enumerate(selected_tips, 1):
             if tip["p_home_cover"] >= tip["p_away_cover"]:
@@ -155,8 +155,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
             
             res += f"{i}. {tip['home_team']} VS {tip['away_team']}\n"
             res += f"   - ราคาต่อรอง: {tip['handicap']}\n"
-            res += f"   - ฟันธง: วาง {rec_team} (โอกาสวิน: {win_prob * 100:.1f}%)\n"
-            res += f"   - [ค่าน้ำคุ้มค่าพิเศษ! มี Value Edge +{tip['edge_value'] * 100:.1f}%]\n"
+            res += f"   - ฟันธง: 🔮 พลังเวทชี้เป้า วาง {rec_team}! (โอกาสวินแต้มต่อ: {win_prob * 100:.1f}%) ⚡\n"
             res += "\n"
             
         res += "ขอให้เฮงๆ รวยๆ กันถ้วนหน้านะคะ! 💪🥺💕"

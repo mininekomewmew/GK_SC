@@ -223,13 +223,13 @@ def calculate_prediction(analysis: dict, home_odds: float = None, away_odds: flo
     edge_away = p_away_cover - p_market_implied_away
     
     if edge_home >= 0.05:
-        recommendation = f"วาง {home_name} (มี Value Edge +{edge_home * 100:.1f}%)"
+        recommendation = f"🔮 พลังเวททำนายชี้เป้า: จัดหนัก {home_name}! (โอกาสวินแต้มต่อ: {p_home_cover * 100:.1f}%) ⚡"
         has_edge = True
     elif edge_away >= 0.05:
-        recommendation = f"วาง {away_name} (มี Value Edge +{edge_away * 100:.1f}%)"
+        recommendation = f"🔮 พลังเวททำนายชี้เป้า: จัดหนัก {away_name}! (โอกาสวินแต้มต่อ: {p_away_cover * 100:.1f}%) ⚡"
         has_edge = True
     else:
-        recommendation = "ไม่มีทีเด็ดราคาคุ้มค่าพิเศษสำหรับคู่นี้ค่ะ"
+        recommendation = "💤 คู่นี้กระแสค่าน้ำไม่คุ้มค่าความเสี่ยง... ปล่อยผ่านไปก่อนดีกว่าค่ะ! 🥺"
         has_edge = False
         
     return {

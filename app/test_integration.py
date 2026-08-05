@@ -57,7 +57,7 @@ class TestIntegration(unittest.TestCase):
             "gameTeamHistory": {}
         }
         res = process_user_command("ทีเด็ด", is_group=False)
-        self.assertIn("คู่เด่นน่าเบ็ทที่สุดวันนี้ค่ะ", res)
+        self.assertIn("คู่เด่นน่าจัดที่สุดวันนี้ค่ะ", res)
 
     @patch('app.main.fetch_today_matches')
     @patch('app.main.fetch_match_analysis')
