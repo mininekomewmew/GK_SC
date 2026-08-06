@@ -329,9 +329,9 @@ def process_user_command(command: str, is_group: bool = False) -> str:
         res = f"📊 สถิติผลงานการทำนายค่ะ! 💖\n\n"
         res += f"📈 ผลงานภาพรวม:\n"
         res += f"   - ทายทั้งหมด: {stats['total']} คู่\n"
-        res += f"   - ชนะ (WIN): {stats['wins']} คู่ (เขียวขจี) 🟢\n"
-        res += f"   - แพ้ (LOSE): {stats['losses']} คู่ 🔴\n"
-        res += f"   - เจ๊า/เสมอหู (DRAW): {stats['draws']} คู่ 🟡\n"
+        res += f"   - ทายถูก (ชนะเดิมพัน): {stats['wins']} คู่ (เขียวขจี) 🟢\n"
+        res += f"   - ทายผิด (แพ้เดิมพัน): {stats['losses']} คู่ 🔴\n"
+        res += f"   - เจ๊า (เสมอเดิมพัน): {stats['draws']} คู่ 🟡\n"
         res += f"   - อัตราความแม่นยำ (Win Rate): {stats['win_rate']:.1f}%\n\n"
         
         # 3. Get last 5 matches
@@ -343,7 +343,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
         if recent:
             res += f"⚽ ผลงานการทาย 5 นัดล่าสุด:\n"
             for i, item in enumerate(recent, 1):
-                emoji = "🟢 WIN" if item["result"] == "WIN" else "🔴 LOSE" if item["result"] == "LOSE" else "🟡 DRAW"
+                emoji = "🟢 ทายถูก (ชนะเดิมพัน)" if item["result"] == "WIN" else "🔴 ทายผิด (แพ้เดิมพัน)" if item["result"] == "LOSE" else "🟡 เจ๊า (เสมอเดิมพัน)"
                 res += f"{i}. {item['home_team']} VS {item['away_team']}\n"
                 res += f"   - ทาย: วาง {item['rec_team']} (ราคาต่อรอง: {item['handicap_value']})\n"
                 res += f"   - ผลลัพธ์: {emoji} (สกอร์: {item['actual_score']})\n\n"

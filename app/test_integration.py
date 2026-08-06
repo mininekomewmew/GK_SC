@@ -14,6 +14,13 @@ from app.main import webhook, process_user_command
 
 class TestIntegration(unittest.TestCase):
     def setUp(self):
+        import sqlite3
+        conn = sqlite3.connect("test_integration.db")
+        cursor = conn.cursor()
+        cursor.execute("DROP TABLE IF EXISTS predictions")
+        conn.commit()
+        conn.close()
+        
         from app.database import init_db
         init_db("test_integration.db")
         
@@ -116,7 +123,7 @@ class TestIntegration(unittest.TestCase):
         
         res = process_user_command("ผลงาน", is_group=False)
         self.assertIn("สถิติผลงานการทำนาย", res)
-        self.assertIn("ชนะ (WIN): 1 คู่", res)
+        self.assertIn("ทายถูก (ชนะเดิมพัน): 1 คู่", res)
         self.assertIn("Team A VS Team B", res)
 
     @patch('app.main.save_group_id')

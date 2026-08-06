@@ -2,8 +2,13 @@ import os
 import json
 import sqlite3
 
+import sys
+
 def get_db_path() -> str:
-    return os.environ.get("DB_PATH", "predictions.db")
+    # If running inside unittest or pytest, NEVER use predictions.db! Use test_predictions.db!
+    is_testing = "unittest" in sys.modules or "pytest" in sys.modules or "test" in sys.argv[0]
+    default_db = "test_predictions.db" if is_testing else "predictions.db"
+    return os.environ.get("DB_PATH", default_db)
 
 def get_db_connection(db_path: str = None):
     if db_path is None:
@@ -73,11 +78,13 @@ def init_db(db_path: str = None, json_history_path: str = "predictions_history.j
         except Exception as e:
             print(f"Error during legacy JSON migration: {e}")
             
-    # Seed and repair the 7 target predictions from August 4th/5th
-    try:
-        seed_and_repair_yesterday_matches(conn)
-    except Exception as e:
-        print(f"Error seeding and repairing target matches: {e}")
+    # Seed and repair the 7 target predictions from August 4th/5th (Skip during testing)
+    is_testing = "unittest" in sys.modules or "pytest" in sys.modules or "test" in sys.argv[0]
+    if not is_testing:
+        try:
+            seed_and_repair_yesterday_matches(conn)
+        except Exception as e:
+            print(f"Error seeding and repairing target matches: {e}")
             
     conn.close()
 
@@ -124,6 +131,14 @@ def seed_and_repair_yesterday_matches(conn):
                     SET handicap_value = ?, rec_team = ?, win_prob = ?, result = ?
                     WHERE match_id = ?
                 """, (hdcp, rec, win_p, new_res, mid))
+                
+    # Automatically clean up mock test records from the production database
+    cursor.execute("""
+        DELETE FROM predictions 
+        WHERE home_team IN ('Home', 'Team A', 'Team C', 'Team A (N)')
+           OR away_team IN ('Away', 'Team B', 'Team D', 'Team B (N)')
+    """)
+    conn.commit()
 
 def save_prediction_db(
     match_id: str,
