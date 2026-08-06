@@ -29,7 +29,8 @@ def make_analysis_flex(alt_text: str, pred: dict, matched_match: dict, goal7_tip
             "text": f"⏰ {date_str} ({time_str} น.)" if date_str else f"⏰ เวลา {time_str} น.",
             "size": "xs",
             "color": "#A0A0B0",
-            "margin": "xs"
+            "margin": "xs",
+            "wrap": True
         },
         {
             "type": "text",
@@ -37,7 +38,8 @@ def make_analysis_flex(alt_text: str, pred: dict, matched_match: dict, goal7_tip
             "size": "xs",
             "color": "#F9D342",
             "weight": "bold",
-            "margin": "xs"
+            "margin": "xs",
+            "wrap": True
         }
     ]
 
@@ -62,8 +64,8 @@ def make_analysis_flex(alt_text: str, pred: dict, matched_match: dict, goal7_tip
                     "layout": "horizontal",
                     "margin": "xs",
                     "contents": [
-                        {"type": "text", "text": f"{home}: {int(home_elo)}", "size": "xs", "color": "#E5E5E5"},
-                        {"type": "text", "text": f"{away}: {int(away_elo)}", "size": "xs", "color": "#E5E5E5", "align": "end"}
+                        {"type": "text", "text": f"{home}: {int(home_elo)}", "size": "xs", "color": "#E5E5E5", "wrap": True},
+                        {"type": "text", "text": f"{away}: {int(away_elo)}", "size": "xs", "color": "#E5E5E5", "align": "end", "wrap": True}
                     ]
                 }
             ]
@@ -87,8 +89,8 @@ def make_analysis_flex(alt_text: str, pred: dict, matched_match: dict, goal7_tip
                 "layout": "horizontal",
                 "margin": "xs",
                 "contents": [
-                    {"type": "text", "text": f"{home}: {pred['home_xg']:.2f}", "size": "xs", "color": "#E5E5E5"},
-                    {"type": "text", "text": f"{away}: {pred['away_xg']:.2f}", "size": "xs", "color": "#E5E5E5", "align": "end"}
+                    {"type": "text", "text": f"{home}: {pred['home_xg']:.2f}", "size": "xs", "color": "#E5E5E5", "wrap": True},
+                    {"type": "text", "text": f"{away}: {pred['away_xg']:.2f}", "size": "xs", "color": "#E5E5E5", "align": "end", "wrap": True}
                 ]
             }
         ]
@@ -112,9 +114,9 @@ def make_analysis_flex(alt_text: str, pred: dict, matched_match: dict, goal7_tip
                 "layout": "horizontal",
                 "margin": "xs",
                 "contents": [
-                    {"type": "text", "text": f"เหย้าชนะ: {pred['p_home'] * 100:.1f}%", "size": "xs", "color": "#8EE4AF"},
-                    {"type": "text", "text": f"เสมอ: {pred['p_draw'] * 100:.1f}%", "size": "xs", "color": "#E5E5E5", "align": "center"},
-                    {"type": "text", "text": f"เยือนชนะ: {pred['p_away'] * 100:.1f}%", "size": "xs", "color": "#FF6B6B", "align": "end"}
+                    {"type": "text", "text": f"เหย้าชนะ: {pred['p_home'] * 100:.1f}%", "size": "xs", "color": "#8EE4AF", "wrap": True},
+                    {"type": "text", "text": f"เสมอ: {pred['p_draw'] * 100:.1f}%", "size": "xs", "color": "#E5E5E5", "align": "center", "wrap": True},
+                    {"type": "text", "text": f"เยือนชนะ: {pred['p_away'] * 100:.1f}%", "size": "xs", "color": "#FF6B6B", "align": "end", "wrap": True}
                 ]
             }
         ]
@@ -221,6 +223,7 @@ def make_analysis_flex(alt_text: str, pred: dict, matched_match: dict, goal7_tip
         "altText": alt_text,
         "contents": {
             "type": "bubble",
+            "size": "giga", # Expand width to widest Giga layout
             "styles": {
                 "header": {"backgroundColor": "#0F2027"},
                 "body": {"backgroundColor": "#203A43"}
@@ -273,8 +276,9 @@ def make_daily_tips_flex(alt_text: str, selected_tips: list, selected_count: int
                     "layout": "horizontal",
                     "margin": "xs",
                     "contents": [
-                        {"type": "text", "text": f"⏰ {datetime_str}", "size": "xxs", "color": "#A0A0B0"},
-                        {"type": "text", "text": f"ราคา: {tip['handicap']}", "size": "xxs", "color": "#F9D342", "align": "end"}
+                        # Set flex sizes to prevent overlapping / truncation
+                        {"type": "text", "text": f"⏰ {datetime_str}", "size": "xxs", "color": "#A0A0B0", "flex": 3, "wrap": True},
+                        {"type": "text", "text": f"ราคา: {tip['handicap']}", "size": "xxs", "color": "#F9D342", "align": "end", "flex": 2, "wrap": True}
                     ]
                 },
                 {
@@ -282,8 +286,8 @@ def make_daily_tips_flex(alt_text: str, selected_tips: list, selected_count: int
                     "layout": "horizontal",
                     "margin": "xs",
                     "contents": [
-                        {"type": "text", "text": f"🔮 วาง {rec_team}", "size": "xs", "weight": "bold", "color": "#8EE4AF"},
-                        {"type": "text", "text": f"โอกาสชนะ: {win_prob * 100:.1f}%", "size": "xs", "color": "#8EE4AF", "align": "end"}
+                        {"type": "text", "text": f"🔮 วาง {rec_team}", "size": "xs", "weight": "bold", "color": "#8EE4AF", "flex": 3, "wrap": True},
+                        {"type": "text", "text": f"โอกาสชนะ: {win_prob * 100:.1f}%", "size": "xs", "color": "#8EE4AF", "align": "end", "flex": 2, "wrap": True}
                     ]
                 }
             ]
@@ -294,6 +298,7 @@ def make_daily_tips_flex(alt_text: str, selected_tips: list, selected_count: int
         "altText": alt_text,
         "contents": {
             "type": "bubble",
+            "size": "giga", # Expand width to widest Giga layout
             "styles": {
                 "header": {"backgroundColor": "#0F2027"},
                 "body": {"backgroundColor": "#203A43"}
@@ -307,7 +312,8 @@ def make_daily_tips_flex(alt_text: str, selected_tips: list, selected_count: int
                         "text": f"🔮 สเต็ป {selected_count} คัดเน้นๆ ประจำวันนี้" if selected_count >= 3 else f"🔮 คัด {selected_count} ทีเด็ดเด่นน่าจัดวันนี้",
                         "weight": "bold",
                         "size": "md",
-                        "color": "#FFFFFF"
+                        "color": "#FFFFFF",
+                        "wrap": True
                     }
                 ]
             },
