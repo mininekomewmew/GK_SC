@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request, Header, HTTPException
 from app.line_bot import verify_signature, reply_message, push_message
 from app.scraper import fetch_today_matches, fetch_match_analysis, fetch_polball_analysis, fetch_finished_scores
 from app.model import calculate_prediction, parse_handicap
+from app.flex_messages import make_analysis_flex, make_daily_tips_flex
 from app.database import (
     init_db,
     save_prediction_db as save_prediction,
@@ -184,7 +185,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
             res += f"   - 🔮 วาง {rec_team}! (โอกาสวินแต้มต่อ: {win_prob * 100:.1f}%) | ราคา: {tip['handicap']}\n\n"
             
         res += "ขอให้เฮงๆ รวยๆ กันถ้วนหน้านะคะ! 💪🥺💕"
-        return res
+        return make_daily_tips_flex(res, selected_tips, selected_count)
 
     elif command == "ผลงาน" or command == "สถิติ":
         # 1. Update history with latest finished scores
@@ -313,6 +314,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 res += f"   - ฟันธง: {pol_analysis['tip']}\n"
                 res += f"   - ผลที่คาด: {pol_analysis['score']}\n\n"
                 
+            news_items = []
             try:
                 from app.rss_scraper import get_news_for_match
                 news_items = get_news_for_match(pred['home_team'], pred['away_team'])
@@ -325,7 +327,7 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 pass
                 
             res += "ขอให้โชคดีสมหวังน้าาา~ 🥺💕💪"
-            return res
+            return make_analysis_flex(res, pred, matched_match, goal7_tip, pol_analysis, news_items)
         except Exception as e:
             return f"ขออภัยน้าาา ดึงข้อมูลวิเคราะห์คู่นี้ขัดข้อง: {str(e)} 🥺💦"
             

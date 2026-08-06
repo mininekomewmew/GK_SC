@@ -3,6 +3,7 @@ import hmac
 import hashlib
 import base64
 import requests
+import json
 
 def verify_signature(body: bytes, signature: str) -> bool:
     channel_secret = os.environ.get("LINE_CHANNEL_SECRET")
@@ -16,6 +17,18 @@ def verify_signature(body: bytes, signature: str) -> bool:
     expected_signature = base64.b64encode(hash_val).decode('utf-8')
     return hmac.compare_digest(signature, expected_signature)
 
+def parse_message_payload(data) -> dict:
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, str):
+        data_stripped = data.strip()
+        if data_stripped.startswith("{") and data_stripped.endswith("}"):
+            try:
+                return json.loads(data_stripped)
+            except Exception:
+                pass
+    return {"type": "text", "text": str(data)}
+
 def reply_message(reply_token: str, text: str) -> bool:
     access_token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
     if not access_token:
@@ -27,12 +40,7 @@ def reply_message(reply_token: str, text: str) -> bool:
     }
     payload = {
         "replyToken": reply_token,
-        "messages": [
-            {
-                "type": "text",
-                "text": text
-            }
-        ]
+        "messages": [parse_message_payload(text)]
     }
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
@@ -51,12 +59,7 @@ def push_message(to_id: str, text: str) -> bool:
     }
     payload = {
         "to": to_id,
-        "messages": [
-            {
-                "type": "text",
-                "text": text
-            }
-        ]
+        "messages": [parse_message_payload(text)]
     }
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
