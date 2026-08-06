@@ -45,7 +45,7 @@ def make_analysis_flex(alt_text: str, pred: dict, matched_match: dict, goal7_tip
 
     body_contents = []
     
-    # Elo Row
+    # Elo Row (Vertical Stack to prevent truncation of long team names)
     if home_elo and away_elo:
         body_contents.append({
             "type": "box",
@@ -61,17 +61,17 @@ def make_analysis_flex(alt_text: str, pred: dict, matched_match: dict, goal7_tip
                 },
                 {
                     "type": "box",
-                    "layout": "horizontal",
+                    "layout": "vertical",
                     "margin": "xs",
                     "contents": [
-                        {"type": "text", "text": f"{home}: {int(home_elo)}", "size": "xs", "color": "#E5E5E5", "wrap": True},
-                        {"type": "text", "text": f"{away}: {int(away_elo)}", "size": "xs", "color": "#E5E5E5", "align": "end", "wrap": True}
+                        {"type": "text", "text": f"• {home}: {int(home_elo)}", "size": "xs", "color": "#E5E5E5", "wrap": True},
+                        {"type": "text", "text": f"• {away}: {int(away_elo)}", "size": "xs", "color": "#E5E5E5", "wrap": True, "margin": "xs"}
                     ]
                 }
             ]
         })
         
-    # xG Row
+    # xG Row (Vertical Stack to prevent truncation of long team names)
     body_contents.append({
         "type": "box",
         "layout": "vertical",
@@ -86,11 +86,11 @@ def make_analysis_flex(alt_text: str, pred: dict, matched_match: dict, goal7_tip
             },
             {
                 "type": "box",
-                "layout": "horizontal",
+                "layout": "vertical",
                 "margin": "xs",
                 "contents": [
-                    {"type": "text", "text": f"{home}: {pred['home_xg']:.2f}", "size": "xs", "color": "#E5E5E5", "wrap": True},
-                    {"type": "text", "text": f"{away}: {pred['away_xg']:.2f}", "size": "xs", "color": "#E5E5E5", "align": "end", "wrap": True}
+                    {"type": "text", "text": f"• {home}: {pred['home_xg']:.2f}", "size": "xs", "color": "#E5E5E5", "wrap": True},
+                    {"type": "text", "text": f"• {away}: {pred['away_xg']:.2f}", "size": "xs", "color": "#E5E5E5", "wrap": True, "margin": "xs"}
                 ]
             }
         ]
@@ -114,9 +114,9 @@ def make_analysis_flex(alt_text: str, pred: dict, matched_match: dict, goal7_tip
                 "layout": "horizontal",
                 "margin": "xs",
                 "contents": [
-                    {"type": "text", "text": f"เหย้าชนะ: {pred['p_home'] * 100:.1f}%", "size": "xs", "color": "#8EE4AF", "wrap": True},
-                    {"type": "text", "text": f"เสมอ: {pred['p_draw'] * 100:.1f}%", "size": "xs", "color": "#E5E5E5", "align": "center", "wrap": True},
-                    {"type": "text", "text": f"เยือนชนะ: {pred['p_away'] * 100:.1f}%", "size": "xs", "color": "#FF6B6B", "align": "end", "wrap": True}
+                    {"type": "text", "text": f"เหย้าชนะ: {pred['p_home'] * 100:.1f}%", "size": "xs", "color": "#8EE4AF", "wrap": True, "flex": 1},
+                    {"type": "text", "text": f"เสมอ: {pred['p_draw'] * 100:.1f}%", "size": "xs", "color": "#E5E5E5", "align": "center", "wrap": True, "flex": 1},
+                    {"type": "text", "text": f"เยือนชนะ: {pred['p_away'] * 100:.1f}%", "size": "xs", "color": "#FF6B6B", "align": "end", "wrap": True, "flex": 1}
                 ]
             }
         ]
@@ -271,23 +271,23 @@ def make_daily_tips_flex(alt_text: str, selected_tips: list, selected_count: int
                     "color": "#FFFFFF",
                     "wrap": True
                 },
+                # Stack metadata vertically with bullet points to prevent overlaps
                 {
                     "type": "box",
-                    "layout": "horizontal",
+                    "layout": "vertical",
                     "margin": "xs",
                     "contents": [
-                        # Set flex sizes to prevent overlapping / truncation
-                        {"type": "text", "text": f"⏰ {datetime_str}", "size": "xxs", "color": "#A0A0B0", "flex": 3, "wrap": True},
-                        {"type": "text", "text": f"ราคา: {tip['handicap']}", "size": "xxs", "color": "#F9D342", "align": "end", "flex": 2, "wrap": True}
+                        {"type": "text", "text": f"⏰ เวลาแข่ง: {datetime_str}", "size": "xxs", "color": "#A0A0B0", "wrap": True},
+                        {"type": "text", "text": f"📈 ราคาต่อรอง: {tip['handicap']}", "size": "xxs", "color": "#F9D342", "wrap": True, "margin": "xs"}
                     ]
                 },
                 {
                     "type": "box",
-                    "layout": "horizontal",
+                    "layout": "vertical",
                     "margin": "xs",
                     "contents": [
-                        {"type": "text", "text": f"🔮 วาง {rec_team}", "size": "xs", "weight": "bold", "color": "#8EE4AF", "flex": 3, "wrap": True},
-                        {"type": "text", "text": f"โอกาสชนะ: {win_prob * 100:.1f}%", "size": "xs", "color": "#8EE4AF", "align": "end", "flex": 2, "wrap": True}
+                        {"type": "text", "text": f"🔮 ชี้เป้า: วาง {rec_team}", "size": "xs", "weight": "bold", "color": "#8EE4AF", "wrap": True},
+                        {"type": "text", "text": f"⚡ โอกาสชนะแต้มต่อ: {win_prob * 100:.1f}%", "size": "xs", "color": "#8EE4AF", "wrap": True, "margin": "xs"}
                     ]
                 }
             ]
