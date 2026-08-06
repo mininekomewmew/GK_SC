@@ -317,9 +317,9 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 from app.rss_scraper import get_news_for_match
                 news_items = get_news_for_match(pred['home_team'], pred['away_team'])
                 if news_items:
-                    res += f"📰 ข่าวสารล่าสุดจากไทยรัฐ:\n"
-                    for news in news_items[:2]:
-                        res += f"   - {news['title']}\n"
+                    res += f"📰 ข่าวสารล่าสุดที่เกี่ยวข้อง:\n"
+                    for news in news_items[:3]:
+                        res += f"   - [{news['source']}] {news['title']}\n"
                     res += "\n"
             except Exception:
                 pass
