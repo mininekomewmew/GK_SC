@@ -1,5 +1,6 @@
 import math
 import datetime
+from app.club_elo import get_match_elo_ratings
 
 def poisson_probability(lmbda: float, k: int) -> float:
     if lmbda <= 0:
@@ -168,6 +169,15 @@ def calculate_prediction(analysis: dict, home_odds: float = None, away_odds: flo
     else:
         home_xg = home_xg_poisson
         away_xg = away_xg_poisson
+        
+    # Get Elo ratings to adjust xG (Only for major clubs and national teams)
+    home_elo, away_elo = get_match_elo_ratings(home_name, away_name)
+    if home_elo is not None and away_elo is not None:
+        elo_diff = home_elo - away_elo
+        # Adjust xG: 100 Elo points equals 0.1 goals adjustment
+        adjustment = elo_diff / 1000.0
+        home_xg = max(0.1, home_xg + adjustment)
+        away_xg = max(0.1, away_xg - adjustment)
     
     # 4. Generate exact score grid probabilities and derive W/D/L
     p_home_win = 0.0
@@ -267,5 +277,7 @@ def calculate_prediction(analysis: dict, home_odds: float = None, away_odds: flo
         "edge_value": round(max(edge_home, edge_away), 4),
         "value_recommendation": recommendation,
         "is_best_tip": has_edge and max(edge_home, edge_away) >= 0.05,
-        "date": match_date
+        "date": match_date,
+        "home_elo": home_elo,
+        "away_elo": away_elo
     }

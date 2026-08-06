@@ -61,6 +61,28 @@ class TestModel(unittest.TestCase):
         result = calculate_prediction(mock_analysis, home_odds=1.25, away_odds=0.72)
         self.assertIn("edge_value", result)
 
+    def test_elo_rating_adjustments(self):
+        from unittest.mock import patch
+        mock_analysis = {
+            "gameInfo": {
+                "taname": "เชลซี",
+                "tbname": "ลิเวอร์พูล",
+                "handicap": "0",
+                "updatedtime": "06/08/2026"
+            },
+            "gameTeamHistory": {},
+            "gamehistory": {}
+        }
+        with patch('app.model.get_match_elo_ratings', return_value=(1900.0, 1700.0)):
+            result = calculate_prediction(mock_analysis)
+            # Elo diff is 200, so adjustment is +0.2 to Home xG, -0.2 to Away xG
+            # Base xG is (1.2*1.2)/1.35 * 1.10 = 1.173 (Home) and (1.2*1.2)/1.35 * 0.90 = 0.96 (Away)
+            # Adjusted xG should be 1.37 and 0.76
+            self.assertAlmostEqual(result["home_xg"], 1.37, places=2)
+            self.assertAlmostEqual(result["away_xg"], 0.76, places=2)
+            self.assertEqual(result["home_elo"], 1900.0)
+            self.assertEqual(result["away_elo"], 1700.0)
+
 if __name__ == '__main__':
     unittest.main()
 

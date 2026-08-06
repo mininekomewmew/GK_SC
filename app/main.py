@@ -283,6 +283,13 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 res += f"⏰ เวลาแข่ง: {matched_match['time']} น.\n"
             res += f"📈 ราคาต่อรองปัจจุบัน: {matched_match['handicap']}\n\n"
             
+            home_elo = pred.get("home_elo")
+            away_elo = pred.get("away_elo")
+            if home_elo and away_elo:
+                res += f"📊 ค่าพลังความแกร่ง (Elo Rating):\n"
+                res += f"   - เจ้าบ้าน {pred['home_team']}: {int(home_elo)}\n"
+                res += f"   - ทีมเยือน {pred['away_team']}: {int(away_elo)}\n\n"
+            
             res += f"📊 คาดการณ์จำนวนประตู (xG):\n"
             res += f"   - เจ้าบ้าน {pred['home_team']}: {pred['home_xg']:.2f}\n"
             res += f"   - ทีมเยือน {pred['away_team']}: {pred['away_xg']:.2f}\n\n"
