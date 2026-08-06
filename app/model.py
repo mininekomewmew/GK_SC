@@ -1,4 +1,5 @@
 import math
+import datetime
 
 def poisson_probability(lmbda: float, k: int) -> float:
     if lmbda <= 0:
@@ -29,6 +30,23 @@ def calculate_prediction(analysis: dict, home_odds: float = None, away_odds: flo
     else:
         handicap_str = game_info.get("handicap", "0.0")
     
+    # Parse match date from epoch timestamp (Local Thai Time)
+    match_date = None
+    match_time_ms = game_info.get("time")
+    if match_time_ms:
+        try:
+            ts = float(match_time_ms) / 1000.0
+            dt = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc) + datetime.timedelta(hours=7)
+            match_date = dt.strftime("%d/%m/%Y")
+        except Exception:
+            pass
+            
+    # Fallback to updatedtime if time is missing
+    if not match_date:
+        updated_time = game_info.get("updatedtime")
+        if updated_time:
+            match_date = updated_time.split()[0]
+
     # 1. Parse goals from last 20 matches (or as many as available)
     history_a = team_history.get("A", {}).get("all", {}).get("history", {})
     history_b = team_history.get("B", {}).get("all", {}).get("history", {})
@@ -249,5 +267,5 @@ def calculate_prediction(analysis: dict, home_odds: float = None, away_odds: flo
         "edge_value": round(max(edge_home, edge_away), 4),
         "value_recommendation": recommendation,
         "is_best_tip": has_edge and max(edge_home, edge_away) >= 0.05,
-        "date": game_info.get("updatedtime")
+        "date": match_date
     }
