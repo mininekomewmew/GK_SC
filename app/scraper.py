@@ -104,6 +104,9 @@ def fetch_today_matches() -> list:
                         except (ValueError, TypeError, KeyError, AttributeError):
                             pass
 
+                    cols = row.xpath("./td")
+                    pundit_tip = cols[8].text_content().strip() if len(cols) > 8 else ""
+
                     if match_id and home_team and away_team:
                         seen_ids.add(match_id)
                         matches.append({
@@ -113,7 +116,8 @@ def fetch_today_matches() -> list:
                             "away_team": away_team,
                             "handicap": handicap,
                             "home_odds": home_odds,
-                            "away_odds": away_odds
+                            "away_odds": away_odds,
+                            "pundit_tip": pundit_tip
                         })
             except Exception:
                 pass

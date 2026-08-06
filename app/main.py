@@ -283,14 +283,39 @@ def process_user_command(command: str, is_group: bool = False) -> str:
                 res += f"⏰ เวลาแข่ง: {matched_match['time']} น.\n"
             res += f"📈 ราคาต่อรองปัจจุบัน: {matched_match['handicap']}\n\n"
             
+            res += f"📊 คาดการณ์จำนวนประตู (xG):\n"
+            res += f"   - เจ้าบ้าน {pred['home_team']}: {pred['home_xg']:.2f}\n"
+            res += f"   - ทีมเยือน {pred['away_team']}: {pred['away_xg']:.2f}\n\n"
+            
+            res += f"🎲 ความน่าจะเป็นผลการแข่ง (1X2):\n"
+            res += f"   - โอกาสเจ้าบ้านชนะ: {pred['p_home'] * 100:.1f}%\n"
+            res += f"   - โอกาสเสมอ: {pred['p_draw'] * 100:.1f}%\n"
+            res += f"   - โอกาสทีมเยือนชนะ: {pred['p_away'] * 100:.1f}%\n\n"
+            
             res += f"🎯 ผลการวิเคราะห์จากโมเดล:\n"
             res += f"   - {pred['value_recommendation']}\n\n"
+            
+            goal7_tip = matched_match.get("pundit_tip")
+            if goal7_tip:
+                res += f"💡 ทรรศนะจากเว็บ Goal7:\n"
+                res += f"   - {goal7_tip}\n\n"
             
             pol_analysis = fetch_polball_analysis(pred['home_team'], pred['away_team'])
             if pol_analysis:
                 res += f"💡 ทรรศนะจากเว็บ Polball:\n"
                 res += f"   - ฟันธง: {pol_analysis['tip']}\n"
                 res += f"   - ผลที่คาด: {pol_analysis['score']}\n\n"
+                
+            try:
+                from app.rss_scraper import get_news_for_match
+                news_items = get_news_for_match(pred['home_team'], pred['away_team'])
+                if news_items:
+                    res += f"📰 ข่าวสารล่าสุดจากไทยรัฐ:\n"
+                    for news in news_items[:2]:
+                        res += f"   - {news['title']}\n"
+                    res += "\n"
+            except Exception:
+                pass
                 
             res += "ขอให้โชคดีสมหวังน้าาา~ 🥺💕💪"
             return res
