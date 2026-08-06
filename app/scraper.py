@@ -278,7 +278,7 @@ def fetch_polball_analysis(home_team: str, away_team: str) -> dict:
     return None
 
 def fetch_finished_scores() -> dict:
-    urls = ["https://goal7.co/", "https://goal7.co/ผลบอลย้อนหลัง/"]
+    urls = ["https://goal7.co/", "https://goal7.co/ผลบอลย้อนหลัง/", "https://goal7.co/ตารางบอลพรุ่งนี้/"]
     scores = {}
     for url in urls:
         try:
