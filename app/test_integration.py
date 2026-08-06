@@ -45,6 +45,15 @@ class TestIntegration(unittest.TestCase):
         res_fallback = process_user_command("hello world", is_group=False)
         self.assertIn("ยังไม่เข้าใจคำสั่งนี้ค่ะ", res_fallback)
 
+    def test_menu_command_logic(self):
+        # Menu/Help command should return a structured command list
+        for cmd in ["วิธีใช้", "เมนู", "help", "คำสั่ง"]:
+            res = process_user_command(cmd, is_group=False)
+            self.assertIn("คู่มือคำสั่งบอทนักทำนายฟุตบอลค่ะ", res)
+            self.assertIn("ทีเด็ด", res)
+            self.assertIn("สถิติ / ผลงาน", res)
+            self.assertIn("วิเคราะห์เจาะลึกรายคู่", res)
+
     @patch('app.main.fetch_today_matches')
     @patch('app.main.fetch_match_analysis')
     def test_ti_ded_command_logic(self, mock_analysis, mock_matches):
