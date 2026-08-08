@@ -55,3 +55,21 @@ class LineClient:
             return response.status_code == 200
         except Exception:
             return False
+
+    def show_loading_animation(self, chat_id: str, loading_seconds: int = 20) -> bool:
+        if not self.access_token or not chat_id:
+            return False
+        url = "https://api.line.me/v2/bot/chat/loading/start"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.access_token}"
+        }
+        payload = {
+            "chatId": chat_id,
+            "loadingSeconds": min(max(loading_seconds, 5), 60)
+        }
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=5)
+            return response.status_code == 202
+        except Exception:
+            return False

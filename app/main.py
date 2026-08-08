@@ -54,6 +54,9 @@ class FootballBotController:
                 text = event["message"]["text"].strip()
                 is_group = source_type in ("group", "room")
                 
+                if not is_group and source.get("userId"):
+                    self.line.show_loading_animation(source["userId"], loading_seconds=30)
+                
                 response_text = self.process_command(text, is_group)
                 if reply_token and response_text:
                     self.line.reply_message(reply_token, response_text)
