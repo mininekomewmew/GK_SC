@@ -99,7 +99,7 @@ class FootballBotController:
                 "พร้อมลุยพาทุกคนคว้าแต้มต่อแล้วค่ะ! 🥺💕💪"
             )
 
-        if command in ["ทีเด็ด", "ทีเด็ดวันนี้"]:
+        if command in ["ทีเด็ด", "ทีเด็ดวันนี้", "สเต็ป4"]:
             matches = self.scraper.fetch_today_matches()
             if not matches:
                 return "วันนี้ไม่มีข้อมูลการแข่ง หรือดึงข้อมูลขัดข้องน้าาา 🥺💦"
@@ -137,8 +137,6 @@ class FootballBotController:
             selected_tips = best_tips[:20]
             selected_count = len(selected_tips)
             
-            res = f"🔮 มนตราวิเคราะห์ชี้เป้า: {'ทีเด็ดชุด สเต็ป' if selected_count >= 3 else 'คัด'} {selected_count} คู่เด่นน่าจัดที่สุดวันนี้ค่ะ! ⚡\n\n"
-                
             for tip in results_list:
                 rec_t = tip["home_team"] if tip["p_home_cover"] >= tip["p_away_cover"] else tip["away_team"]
                 w_prob = max(tip["p_home_cover"], tip["p_away_cover"])
@@ -148,6 +146,24 @@ class FootballBotController:
                     self.engine.parse_handicap(tip["handicap"]), rec_t, tip["edge_value"], w_prob, is_best
                 )
 
+            if command == "สเต็ป4":
+                usable_tips = selected_tips[:len(selected_tips) - (len(selected_tips) % 4)]
+                if len(usable_tips) < 4:
+                    return "วันนี้มีคู่ที่มั่นใจผ่านเกณฑ์ไม่ถึง 4 คู่ จัดชุดสเต็ป 4 ไม่ได้น้าาา 🥺💦"
+                
+                res = "🔮 มนตราจัดชุดสเต็ป 4 คู่เด่นเน้นๆ ให้แล้วค่ะ! ⚡\n\n"
+                for s in range(0, len(usable_tips), 4):
+                    res += f"🔥 ชุดที่ {(s//4)+1}:\n"
+                    for i, tip in enumerate(usable_tips[s:s+4], 1):
+                        rec_t = tip["home_team"] if tip["p_home_cover"] >= tip["p_away_cover"] else tip["away_team"]
+                        dt_str = f"({tip.get('date', '')[:5]} {tip['time']})" if tip.get('date') else f"({tip['time']})"
+                        res += f"   {i}. {rec_t} {dt_str} | ราคา: {tip['handicap']}\n"
+                    res += "\n"
+                res += "ขอให้เข้าเต็มๆ แตกทุกชุดนะคะ! 💪🥺💕"
+                return res[:5000]
+
+            res = f"🔮 มนตราวิเคราะห์ชี้เป้า: {'ทีเด็ดชุด สเต็ป' if selected_count >= 3 else 'คัด'} {selected_count} คู่เด่นน่าจัดที่สุดวันนี้ค่ะ! ⚡\n\n"
+            
             for i, tip in enumerate(selected_tips, 1):
                 rec_t = tip["home_team"] if tip["p_home_cover"] >= tip["p_away_cover"] else tip["away_team"]
                 w_prob = max(tip["p_home_cover"], tip["p_away_cover"])
