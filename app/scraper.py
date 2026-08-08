@@ -217,8 +217,10 @@ class FootballScraper:
                 
             h_clean = clean_team_name(home_team)
             a_clean = clean_team_name(away_team)
-            h_prefix = h_clean[:4] if len(h_clean) >= 4 else h_clean
-            a_prefix = a_clean[:4] if len(a_clean) >= 4 else a_clean
+            
+            # Use 7 chars for Thai to ensure uniqueness, fallback to full name if shorter
+            h_prefix = h_clean[:7] if len(h_clean) >= 7 else h_clean
+            a_prefix = a_clean[:7] if len(a_clean) >= 7 else a_clean
             
             for l in links:
                 href = l.attrib.get("href", "")
@@ -226,6 +228,10 @@ class FootballScraper:
                 text_content = " ".join([t.strip() for t in l.xpath(".//text()") if t.strip()]).lower().replace(' ', '').replace('fc', '')
                 if "วิเคราะห์บอล" in text_content or "-vs-" in text_content or "vs" in href or "วิเคราะห์บอล" in href:
                     if (h_prefix and h_prefix in text_content) or (a_prefix and a_prefix in text_content):
+                        # Ensure we don't match completely different teams due to short prefix
+                        if "vs" in text_content or "-vs-" in text_content:
+                            if not (h_prefix in text_content or a_prefix in text_content):
+                                continue
                         matched_url = href
                         break
                     
@@ -286,9 +292,9 @@ class FootballScraper:
                     parts = text_content.split('-vs-')
                     if len(parts) == 2:
                         h_team = parts[0].split(':')[-1].strip()
-                        if h_team: teams.add(h_team[:4])
+                        if h_team: teams.add(h_team[:7])
                         a_team = parts[1].strip()
-                        if a_team: teams.add(a_team[:4])
+                        if a_team: teams.add(a_team[:7])
             
             self.cache.set(cache_key, list(teams), 600)
             return teams
@@ -304,8 +310,8 @@ class FootballScraper:
         h_clean = clean_team_name(home_team)
         a_clean = clean_team_name(away_team)
         
-        h_prefix = h_clean[:4] if len(h_clean) >= 4 else h_clean
-        a_prefix = a_clean[:4] if len(a_clean) >= 4 else a_clean
+        h_prefix = h_clean[:7] if len(h_clean) >= 7 else h_clean
+        a_prefix = a_clean[:7] if len(a_clean) >= 7 else a_clean
         
         pt = self._get_polball_teams()
         if not pt:
