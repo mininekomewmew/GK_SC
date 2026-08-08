@@ -316,7 +316,7 @@ class FootballScraper:
         pt = self._get_polball_teams()
         if not pt:
             return True
-        return h_prefix in pt or a_prefix in pt
+        return h_prefix in pt and a_prefix in pt
 
     def fetch_finished_scores(self) -> dict:
         urls = ["https://goal7.co/", "https://goal7.co/ผลบอลย้อนหลัง/", "https://goal7.co/ตารางบอลพรุ่งนี้/"]
