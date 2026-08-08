@@ -117,11 +117,16 @@ class FootballBotController:
                     
             best_tips = []
             football_date = self._get_football_date().date()
+            window_start = datetime.combine(football_date, time(12, 0))
+            window_end = window_start + timedelta(days=1)
+            
             for tip in results_list:
                 if not tip["is_best_tip"]: continue
-                if tip.get("date"):
+                if tip.get("date") and tip.get("time"):
                     try:
-                        if datetime.strptime(tip["date"].split()[0], "%d/%m/%Y").date() < football_date:
+                        dt_str = f"{tip['date'].split()[0]} {tip['time']}"
+                        match_dt = datetime.strptime(dt_str, "%d/%m/%Y %H:%M")
+                        if not (window_start <= match_dt < window_end):
                             continue
                     except Exception:
                         pass
