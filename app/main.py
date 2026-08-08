@@ -63,17 +63,24 @@ class FootballBotController:
 
     def _is_team_match(self, query: str, team_name: str) -> bool:
         def clean(s: str) -> str:
+            # Remove [League-Rank] tags first, then special chars
+            s = re.sub(r"\[.*?\]", "", s)
             return re.sub(r"[\s\.\-\(\)]", "", s.lower().strip())
 
         q_clean = clean(query)
         t_clean = clean(team_name)
 
-        if q_clean in t_clean or t_clean in q_clean:
+        if q_clean == t_clean or t_clean.startswith(q_clean):
             return True
 
         for key, targets in self.aliases.items():
             if clean(key) == q_clean:
-                return any(clean(target) in t_clean for target in targets)
+                return any(clean(target) == t_clean or t_clean.startswith(clean(target)) for target in targets)
+                
+        # Fallback for very specific queries to avoid short false positives (like 'แมน' in 'ทูคูแมน')
+        if len(q_clean) >= 4 and q_clean in t_clean:
+            return True
+            
         return False
 
     def process_command(self, command: str, is_group: bool = False) -> str:
