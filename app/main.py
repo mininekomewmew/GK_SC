@@ -1,496 +1,314 @@
-import os
+import re
 import asyncio
 import json
+import os
 from datetime import datetime, time, timedelta
 from dotenv import load_dotenv
-load_dotenv()
 
 from fastapi import FastAPI, Request, Header, HTTPException
 
-from app.line_bot import verify_signature, reply_message, push_message
-from app.scraper import fetch_today_matches, fetch_match_analysis, fetch_polball_analysis, fetch_finished_scores
-from app.model import calculate_prediction, parse_handicap
-from app.flex_messages import make_analysis_flex, make_daily_tips_flex
-from app.database import (
-    init_db,
-    save_prediction_db as save_prediction,
-    update_predictions_db as update_predictions_history,
-    get_stats_db,
-    get_recent_predictions_db
-)
+from app.database import DatabaseManager
+from app.line_bot import LineClient
+from app.scraper import CacheManager, FootballScraper
+from app.club_elo import EloService
+from app.rss_scraper import NewsScraper
+from app.model import PredictionEngine
 
-app = FastAPI(title="Football Prediction Bot")
+load_dotenv()
 
-def save_group_id(group_id: str):
-    if not group_id:
-        return
-    # ponytail: simple flat file to save group IDs
-    file_path = "groups.txt"
-    existing = set()
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                existing = {line.strip() for line in f if line.strip()}
-        except Exception:
-            pass
-    if group_id not in existing:
-        try:
-            with open(file_path, "a", encoding="utf-8") as f:
-                f.write(group_id + "\n")
-        except Exception:
-            pass
-
-def get_group_ids() -> list:
-    file_path = "groups.txt"
-    if not os.path.exists(file_path):
-        return []
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return [line.strip() for line in f if line.strip()]
-    except Exception:
-        return []
-
-@app.post("/webhook")
-async def webhook(request: Request, x_line_signature: str = Header(None)):
-    if not x_line_signature:
-        raise HTTPException(status_code=400, detail="Missing signature header")
-    
-    body = await request.body()
-    if not verify_signature(body, x_line_signature):
-        raise HTTPException(status_code=400, detail="Invalid signature")
+class FootballBotController:
+    def __init__(self):
+        self.db = DatabaseManager()
+        self.line = LineClient()
+        self.cache = CacheManager()
+        self.scraper = FootballScraper(self.cache)
+        self.elo = EloService(self.cache)
+        self.news = NewsScraper(self.cache, self.elo)
+        self.engine = PredictionEngine(self.elo)
         
-    data = await request.json()
-    events = data.get("events", [])
-    for event in events:
-        source = event.get("source", {})
-        source_type = source.get("type", "user")
-        
-        if source_type == "group":
-            group_id = source.get("groupId")
+        data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app", "data")
+        with open(os.path.join(data_dir, "team_aliases.json"), "r", encoding="utf-8") as f:
+            self.aliases = json.load(f)
+
+    def _get_football_date(self) -> datetime:
+        """Returns the current date adjusted for 12:00 PM cutoff"""
+        now = datetime.now()
+        if now.hour < 12:
+            return now - timedelta(days=1)
+        return now
+
+    def startup(self):
+        self.db.init_db()
+
+    def process_webhook(self, signature: str, body: bytes, data: dict):
+        for event in data.get("events", []):
+            source = event.get("source", {})
+            source_type = source.get("type", "user")
+            
+            group_id = source.get("groupId") or source.get("roomId")
             if group_id:
-                save_group_id(group_id)
-        elif source_type == "room":
-            room_id = source.get("roomId")
-            if room_id:
-                save_group_id(room_id)
-                
-        if event.get("type") == "message" and event.get("message", {}).get("type") == "text":
-            reply_token = event.get("replyToken")
-            text = event["message"]["text"].strip()
-            
-            is_group = source_type in ("group", "room")
-            response_text = process_user_command(text, is_group=is_group)
-            if reply_token and response_text:
-                reply_message(reply_token, response_text)
-                
-    return "OK"
-
-# Predictions are now handled using SQLite DB via app/database.py
-import re
-
-def is_team_match(query: str, team_name: str) -> bool:
-    q = query.lower().strip()
-    t = team_name.lower().strip()
-    
-    def clean_for_match(s: str) -> str:
-        return re.sub(r"[\s\.\-\(\)]", "", s)
-        
-    q_clean = clean_for_match(q)
-    t_clean = clean_for_match(t)
-    
-    if q_clean in t_clean or t_clean in q_clean:
-        return True
-        
-    aliases = {
-        "แมนยู": ["แมนเชสเตอร์ ยูไนเต็ด", "แมนฯ ยูไนเต็ด", "แมนยู", "manchester united", "man united"],
-        "แมนฯ ยู": ["แมนเชสเตอร์ ยูไนเต็ด", "แมนฯ ยูไนเต็ด", "แมนยู", "manchester united", "man united"],
-        "แมนฯยู": ["แมนเชสเตอร์ ยูไนเต็ด", "แมนฯ ยูไนเต็ด", "แมนยู", "manchester united", "man united"],
-        "man u": ["แมนเชสเตอร์ ยูไนเต็ด", "แมนฯ ยูไนเต็ด", "แมนยู", "manchester united", "man united"],
-        "man utd": ["แมนเชสเตอร์ ยูไนเต็ด", "แมนฯ ยูไนเต็ด", "แมนยู", "manchester united", "man united"],
-        "man united": ["แมนเชสเตอร์ ยูไนเต็ด", "แมนฯ ยูไนเต็ด", "แมนยู", "manchester united", "man united"],
-        "manchester united": ["แมนเชสเตอร์ ยูไนเต็ด", "แมนฯ ยูไนเต็ด", "แมนยู", "manchester united", "man united"],
-        
-        "แมนซิตี้": ["แมนเชสเตอร์ ซิตี้", "แมนฯ ซิตี้", "แมนซิตี้", "manchester city", "man city"],
-        "แมนฯ ซิตี้": ["แมนเชสเตอร์ ซิตี้", "แมนฯ ซิตี้", "แมนซิตี้", "manchester city", "man city"],
-        "แมนฯซิตี้": ["แมนเชสเตอร์ ซิตี้", "แมนฯ ซิตี้", "แมนซิตี้", "manchester city", "man city"],
-        "man city": ["แมนเชสเตอร์ ซิตี้", "แมนฯ ซิตี้", "แมนซิตี้", "manchester city", "man city"],
-        "mancity": ["แมนเชสเตอร์ ซิตี้", "แมนฯ ซิตี้", "แมนซิตี้", "manchester city", "man city"],
-        "manchester city": ["แมนเชสเตอร์ ซิตี้", "แมนฯ ซิตี้", "แมนซิตี้", "manchester city", "man city"],
-        
-        "หงส์แดง": ["ลิเวอร์พูล", "liverpool"],
-        "liverpool": ["ลิเวอร์พูล", "liverpool"],
-        
-        "สิงห์บลู": ["เชลซี", "chelsea"],
-        "สิงโตน้ำเงินคราม": ["เชลซี", "chelsea"],
-        "chelsea": ["เชลซี", "chelsea"],
-        
-        "ปืนใหญ่": ["อาร์เซน่อล", "อาร์เซนอล", "arsenal"],
-        "arsenal": ["อาร์เซน่อล", "อาร์เซนอล", "arsenal"],
-        
-        "ไก่เดือยทอง": ["ท็อตแน่ม ฮ็อทสเปอร์", "สเปอร์ส", "สเปอร์", "tottenham"],
-        "สเปอร์": ["ท็อตแน่ม ฮ็อทสเปอร์", "สเปอร์ส", "สเปอร์", "tottenham"],
-        "สเปอร์ส": ["ท็อตแน่ม ฮ็อทสเปอร์", "สเปอร์ส", "สเปอร์", "tottenham"],
-        "tottenham": ["ท็อตแน่ม ฮ็อทสเปอร์", "สเปอร์ส", "สเปอร์", "tottenham"],
-        
-        "สาลิกาดง": ["นิวคาสเซิ่ล", "นิวคาสเซิล", "newcastle"],
-        "newcastle": ["นิวคาสเซิ่ล", "นิวคาสเซิล", "newcastle"],
-        
-        "บาร์ซ่า": ["บาร์เซโลน่า", "barcelona"],
-        "เจ้าบุญทุ่ม": ["บาร์เซโลน่า", "barcelona"],
-        "barcelona": ["บาร์เซโลน่า", "barcelona"],
-        
-        "มาดริด": ["เรอัล มาดริด", "real madrid"],
-        "ราชันชุดขาว": ["เรอัล มาดริด", "real madrid"],
-        "real madrid": ["เรอัล มาดริด", "real madrid"],
-        
-        "แอต มาดริด": ["แอตเลติโก มาดริด", "atletico madrid"],
-        "แอตฯ มาดริด": ["แอตเลติโก มาดริด", "atletico madrid"],
-        "atletico": ["แอตเลติโก มาดริด", "atletico madrid"],
-        
-        "เสือใต้": ["บาเยิร์น มิวนิค", "บาเยิร์น", "bayern"],
-        "bayern": ["บาเยิร์น มิวนิค", "บาเยิร์น", "bayern"],
-        
-        "เสือเหลือง": ["โบรุสเซีย ดอร์ทมุนด์", "ดอร์ทมุนด์", "dortmund"],
-        "dortmund": ["โบรุสเซีย ดอร์ทมุนด์", "ดอร์ทมุนด์", "dortmund"],
-        
-        "เปแอสเช": ["ปารีส แซงต์ แชร์กแมง", "ปารีส แซงต์-แชร์กแมง", "psg"],
-        "psg": ["ปารีส แซงต์ แชร์กแมง", "ปารีส แซงต์-แชร์กแมง", "psg"],
-        
-        "งูใหญ่": ["อินเตอร์ มิลาน", "inter"],
-        "inter": ["อินเตอร์ มิลาน", "inter"],
-        
-        "ปีศาจแดงดำ": ["เอซี มิลาน", "milan"],
-        "ac milan": ["เอซี มิลาน", "milan"],
-        
-        "ม้าลาย": ["ยูเวนตุส", "juventus"],
-        "juventus": ["ยูเวนตุส", "juventus"],
-        
-        "โรม่า": ["เอเอส โรม่า", "โรม่า", "roma"],
-        "roma": ["เอเอส โรม่า", "โรม่า", "roma"],
-        
-        "บีจี": ["บีจี ปทุม ยูไนเต็ด", "บีจี ปทุม", "bg pathum", "bg"],
-        "bg": ["บีจี ปทุม ยูไนเต็ด", "บีจี ปทุม", "bg pathum", "bg"],
-        "bg pathum": ["บีจี ปทุม ยูไนเต็ด", "บีจี ปทุม", "bg pathum", "bg"],
-        
-        "ท่าเรือ": ["การท่าเรือ เอฟซี", "การท่าเรือ", "port fc", "port"],
-        "port fc": ["การท่าเรือ เอฟซี", "การท่าเรือ", "port fc", "port"],
-        
-        "บุรีรัมย์": ["บุรีรัมย์ ยูไนเต็ด", "บุรีรัมย์", "buriram"],
-        "buriram": ["บุรีรัมย์ ยูไนเต็ด", "บุรีรัมย์", "buriram"],
-        
-        "เมืองทอง": ["เมืองทอง ยูไนเต็ด", "กิเลนผยอง", "muangthong"],
-        "muangthong": ["เมืองทอง ยูไนเต็ด", "กิเลนผยอง", "muangthong"],
-    }
-    
-    for key, targets in aliases.items():
-        if clean_for_match(key) == q_clean:
-            for target in targets:
-                if clean_for_match(target) in t_clean:
-                    return True
+                self.db.save_group_id(group_id)
                     
-    return False
-
-def process_user_command(command: str, is_group: bool = False) -> str:
-    # Normalize command prefixes for match analysis to simplify typing
-    for prefix in ["วิเคราะห์ ", "วิ ", "เช็ค ", "เชค ", "v ", "vs "]:
-        if command.lower().startswith(prefix):
-            command = "วิเคราะห์ " + command[len(prefix):].strip()
-            break
-
-    if command in ["วิธีใช้", "เมนู", "ช่วยด้วย", "help", "คำสั่ง"]:
-        res = "🔮 คู่มือคำสั่งบอทนักทำนายฟุตบอลค่ะ! 💖\n\n"
-        res += "พี่แมวสามารถสั่งให้น้องวิเคราะห์บอลได้ง่ายๆ ผ่านคีย์เวิร์ดต่อไปนี้เลยค่ะ:\n\n"
-        res += "1. 🔮 [ทีเด็ด]\n"
-        res += "   - คำสั่ง: พิมพ์ 'ทีเด็ด' หรือ 'ทีเด็ดวันนี้'\n"
-        res += "   - การทำงาน: วิเคราะห์คู่เด่นวันนี้แบบเรียลไทม์ และจัดเป้าชุดเด็ด 'สเต็ป' ที่แม่นยำที่สุดให้ทันทีค่ะ!\n\n"
-        res += "2. 📊 [สถิติ / ผลงาน]\n"
-        res += "   - คำสั่ง: พิมพ์ 'สถิติ' หรือ 'ผลงาน'\n"
-        res += "   - การทำงาน: ตรวจสอบความแม่นยำ (Win Rate), สรุปผลชนะ/เสมอ/แพ้ทั้งหมด และส่องผลการทาย 5 นัดล่าสุดค่ะ!\n\n"
-        res += "3. ⚽ [วิเคราะห์เจาะลึกรายคู่]\n"
-        res += "   - คำสั่ง: พิมพ์ 'วิ [ชื่อทีม]' หรือ 'vs [ชื่อทีม]'\n"
-        res += "     (เช่น 'วิ แมนยู' หรือ 'vs เชลซี')\n"
-        res += "   - การทำงาน: ดึงสถิติคาดการณ์ประตู (xG), โอกาสแพ้ชนะ, ค่าพลังความแกร่ง (Elo), ทรรศนะเซียนดัง และข่าวสารล่าสุดเสิร์ฟให้เป็นคู่มือครบจบในการ์ดเดียวค่ะ!\n\n"
-        res += "4. ℹ️ [ดูเมนูคำสั่งนี้]\n"
-        res += "   - คำสั่ง: พิมพ์ 'วิธีใช้' / 'เมนู' / 'help'\n"
-        res += "   - การทำงาน: แสดงหน้าต่างคู่มือเมนูคำสั่งนี้ค่ะ\n\n"
-        res += "พร้อมลุยพาทุกคนคว้าแต้มต่อแล้วค่ะ! 🥺💕💪"
-        return res
-
-    if command == "ทีเด็ด" or command == "ทีเด็ดวันนี้":
-        matches = fetch_today_matches()
-        if not matches:
-            return "วันนี้ไม่มีข้อมูลการแข่ง หรือดึงข้อมูลขัดข้องน้าาา 🥺💦"
-        
-        # Run analysis on all matches
-        results_list = []
-        for match in matches:
-            try:
-                analysis = fetch_match_analysis(match["id"])
-                pred = calculate_prediction(
-                    analysis,
-                    home_odds=match.get("home_odds"),
-                    away_odds=match.get("away_odds"),
-                    handicap=match.get("handicap")
-                )
-                pred["id"] = match["id"]
-                # Attach handicap text for display
-                pred["handicap"] = match.get("handicap", "0.0")
-                # Calculate max cover probability for confidence sorting
-                pred["max_prob"] = max(pred["p_home_cover"], pred["p_away_cover"])
-                pred["time"] = match["time"]
-                results_list.append(pred)
-            except Exception:
-                continue
+            if event.get("type") == "message" and event.get("message", {}).get("type") == "text":
+                reply_token = event.get("replyToken")
+                text = event["message"]["text"].strip()
+                is_group = source_type in ("group", "room")
                 
-        # Filter to only the matches that are worth betting on (is_best_tip = True) and are today or in the future
-        best_tips = []
-        current_date = datetime.now().date()
-        for tip in results_list:
-            if not tip["is_best_tip"]:
-                continue
-            
-            match_date_str = tip.get("date")
-            if match_date_str:
-                try:
-                    date_part = match_date_str.split()[0]
-                    match_date = datetime.strptime(date_part, "%d/%m/%Y").date()
-                    if match_date < current_date:
-                        continue
-                except Exception:
-                    pass
-            best_tips.append(tip)
-        
-        if not best_tips:
-            return "วันนี้วิเคราะห์แล้วยังไม่มีคู่ที่กระแสค่าน้ำคุ้มค่าความเสี่ยงเลยนะคะ 🥺💦 ลองพิมพ์ 'วิเคราะห์ [ชื่อทีม]' เพื่อส่องกระแสรายคู่ได้เลยค่ะ 💖"
-            
-        # Sort by cover probability descending
-        best_tips.sort(key=lambda x: x["max_prob"], reverse=True)
-        
-        # Cap at 7 matches
-        selected_tips = best_tips[:7]
-        selected_count = len(selected_tips)
-        
-        if selected_count >= 3:
-            res = f"🔮 มนตราวิเคราะห์ชี้เป้า: ทีเด็ดชุด \"สเต็ป {selected_count}\" คัดเน้นๆ วันนี้ค่ะ! ⚡\n\n"
-        else:
-            res = f"🔮 มนตราวิเคราะห์ชี้เป้า: คัด {selected_count} คู่เด่นน่าจัดที่สุดวันนี้ค่ะ! ⚡\n\n"
-            
-        for i, tip in enumerate(selected_tips, 1):
-            if tip["p_home_cover"] >= tip["p_away_cover"]:
-                rec_team = tip["home_team"]
-                win_prob = tip["p_home_cover"]
-            else:
-                rec_team = tip["away_team"]
-                win_prob = tip["p_away_cover"]
-                
-            # Handicap parsing
-            handicap_val = parse_handicap(tip["handicap"])
-                
-            # Save to prediction history
-            save_prediction(
-                match_id=tip["id"],
-                date_str=datetime.now().strftime("%Y-%m-%d"),
-                home_team=tip["home_team"],
-                away_team=tip["away_team"],
-                handicap_val=handicap_val,
-                rec_team=rec_team,
-                edge_val=tip["edge_value"],
-                win_prob=win_prob
-            )
-            
-            match_date = tip.get("date", "")
-            date_display = match_date[:5] if match_date else ""
-            time_display = tip.get("time", "")
-            datetime_str = f" | ⏰ {date_display} ({time_display})" if date_display else f" | ⏰ {time_display}"
-            
-            res += f"{i}. {tip['home_team']} VS {tip['away_team']}{datetime_str}\n"
-            res += f"   - 🔮 วาง {rec_team}! (โอกาสวินแต้มต่อ: {win_prob * 100:.1f}%) | ราคา: {tip['handicap']}\n\n"
-            
-        res += "ขอให้เฮงๆ รวยๆ กันถ้วนหน้านะคะ! 💪🥺💕"
-        return make_daily_tips_flex(res, selected_tips, selected_count)
+                response_text = self.process_command(text, is_group)
+                if reply_token and response_text:
+                    self.line.reply_message(reply_token, response_text)
 
-    elif command == "ผลงาน" or command == "สถิติ":
-        # 1. Update history with latest finished scores
-        try:
-            scores = fetch_finished_scores()
-            update_predictions_history(scores)
-        except Exception:
-            pass
-            
-        # 2. Get stats from DB
-        try:
-            stats = get_stats_db()
-        except Exception:
-            return "ไม่สามารถโหลดข้อมูลประวัติการทายผลได้ค่ะ 🥺💦"
-            
-        if not stats:
-            return "ยังไม่มีข้อมูลประวัติการทายผลเลยนะคะ 🥺💦"
-            
-        res = f"📊 สถิติผลงานการทำนายค่ะ! 💖\n\n"
-        res += f"📈 ผลงานภาพรวม:\n"
-        res += f"   - ทายทั้งหมด: {stats['total']} คู่\n"
-        res += f"   - ทายถูก (ชนะเดิมพัน): {stats['wins']} คู่ (เขียวขจี) 🟢\n"
-        res += f"   - ทายผิด (แพ้เดิมพัน): {stats['losses']} คู่ 🔴\n"
-        res += f"   - เจ๊า (เสมอเดิมพัน): {stats['draws']} คู่ 🟡\n"
-        res += f"   - อัตราความแม่นยำ (Win Rate): {stats['win_rate']:.1f}%\n\n"
-        
-        # 3. Get last 5 matches
-        try:
-            recent = get_recent_predictions_db(5)
-        except Exception:
-            recent = []
-            
-        if recent:
-            res += f"⚽ ผลงานการทาย 5 นัดล่าสุด:\n"
-            for i, item in enumerate(recent, 1):
-                emoji = "🟢 ทายถูก (ชนะเดิมพัน)" if item["result"] == "WIN" else "🔴 ทายผิด (แพ้เดิมพัน)" if item["result"] == "LOSE" else "🟡 เจ๊า (เสมอเดิมพัน)"
-                res += f"{i}. {item['home_team']} VS {item['away_team']}\n"
-                res += f"   - ทาย: วาง {item['rec_team']} (ราคาต่อรอง: {item['handicap_value']})\n"
-                res += f"   - ผลลัพธ์: {emoji} (สกอร์: {item['actual_score']})\n\n"
-                
-        res += "จะตั้งใจวิเคราะห์ให้แม่นยำยิ่งขึ้นเสมอนะคะ! 🥺💕💪"
-        return res
-        
-    elif command.startswith("วิเคราะห์ "):
-        team_query = command[9:].strip()
-        if not team_query:
-            return "กรุณาระบุชื่อทีมที่ต้องการค้นหาและวิเคราะห์ด้วยนะคะ 🥺"
-        matches = fetch_today_matches()
+    def _is_team_match(self, query: str, team_name: str) -> bool:
+        def clean(s: str) -> str:
+            return re.sub(r"[\s\.\-\(\)]", "", s.lower().strip())
 
-        matched_match = None
-        for m in matches:
-            if is_team_match(team_query, m["home_team"]) or is_team_match(team_query, m["away_team"]):
-                matched_match = m
+        q_clean = clean(query)
+        t_clean = clean(team_name)
+
+        if q_clean in t_clean or t_clean in q_clean:
+            return True
+
+        for key, targets in self.aliases.items():
+            if clean(key) == q_clean:
+                return any(clean(target) in t_clean for target in targets)
+        return False
+
+    def process_command(self, command: str, is_group: bool = False) -> str:
+        for prefix in ["วิเคราะห์ ", "วิ ", "เช็ค ", "เชค ", "v ", "vs "]:
+            if command.lower().startswith(prefix):
+                command = "วิเคราะห์ " + command[len(prefix):].strip()
                 break
-                
-        if not matched_match:
-            return f"หาคู่แข่งของทีม '{team_query}' ในตารางแข่งขันวันนี้ไม่เจอเลยค่ะ 🥺💦 ลองพิมพ์ชื่อทีมให้ตรงคีย์น้าาา"
-            
-        try:
-            analysis = fetch_match_analysis(matched_match["id"])
-            pred = calculate_prediction(
-                analysis,
-                home_odds=matched_match.get("home_odds"),
-                away_odds=matched_match.get("away_odds"),
-                handicap=matched_match.get("handicap")
+
+        if command in ["วิธีใช้", "เมนู", "ช่วยด้วย", "help", "คำสั่ง"]:
+            return (
+                "🔮 คู่มือคำสั่งบอทนักทำนายฟุตบอลค่ะ! 💖\n\n"
+                "1. 🔮 [ทีเด็ด] - วิเคราะห์คู่เด่นวันนี้\n"
+                "2. 📊 [สถิติ / ผลงาน] - ดู Win Rate\n"
+                "3. ⚽ [วิ [ชื่อทีม]] หรือ [vs [ชื่อทีม]] - เจาะลึกรายคู่\n"
+                "4. ℹ️ [วิธีใช้] - ดูเมนูนี้\n\n"
+                "พร้อมลุยพาทุกคนคว้าแต้มต่อแล้วค่ะ! 🥺💕💪"
             )
+
+        if command in ["ทีเด็ด", "ทีเด็ดวันนี้"]:
+            matches = self.scraper.fetch_today_matches()
+            if not matches:
+                return "วันนี้ไม่มีข้อมูลการแข่ง หรือดึงข้อมูลขัดข้องน้าาา 🥺💦"
             
-            # Save single match analysis prediction
-            if pred["p_home_cover"] >= pred["p_away_cover"]:
-                rec_team = pred["home_team"]
-                win_prob = pred["p_home_cover"]
-            else:
-                rec_team = pred["away_team"]
-                win_prob = pred["p_away_cover"]
+            results_list = []
+            for match in matches:
+                try:
+                    analysis = self.scraper.fetch_match_analysis(match["id"])
+                    pred = self.engine.calculate_prediction(analysis, match.get("home_odds"), match.get("away_odds"), match.get("handicap"))
+                    pred.update({"id": match["id"], "handicap": match.get("handicap", "0.0"), "time": match["time"]})
+                    pred["max_prob"] = max(pred["p_home_cover"], pred["p_away_cover"])
+                    results_list.append(pred)
+                except Exception:
+                    continue
+                    
+            best_tips = []
+            football_date = self._get_football_date().date()
+            for tip in results_list:
+                if not tip["is_best_tip"]: continue
+                if tip.get("date"):
+                    try:
+                        if datetime.strptime(tip["date"].split()[0], "%d/%m/%Y").date() < football_date:
+                            continue
+                    except Exception:
+                        pass
+                best_tips.append(tip)
+            
+            if not best_tips:
+                return "วันนี้วิเคราะห์แล้วยังไม่มีคู่ที่กระแสค่าน้ำคุ้มค่าความเสี่ยงเลยนะคะ 🥺💦 ลองพิมพ์ 'วิเคราะห์ [ชื่อทีม]' เพื่อส่องกระแสรายคู่ได้เลยค่ะ 💖"
                 
-            # Handicap parsing
-            handicap_val = parse_handicap(matched_match["handicap"])
+            for tip in best_tips:
+                tip["is_major"] = self.scraper.is_major_match(tip["home_team"], tip["away_team"])
                 
-            save_prediction(
-                match_id=matched_match["id"],
-                date_str=datetime.now().strftime("%Y-%m-%d"),
-                home_team=pred["home_team"],
-                away_team=pred["away_team"],
-                handicap_val=handicap_val,
-                rec_team=rec_team,
-                edge_val=pred["edge_value"],
-                win_prob=win_prob
-            )
+            best_tips.sort(key=lambda x: (x.get("is_major", False), x["max_prob"]), reverse=True)
+            selected_tips = best_tips[:20]
+            selected_count = len(selected_tips)
             
-            match_date = pred.get("date")
-            res = f"⚽ วิเคราะห์แมตช์มาให้แล้วค่ะ! 💖\n\n"
-            res += f"🏆 {pred['home_team']} VS {pred['away_team']}\n"
-            if match_date:
-                res += f"⏰ วันเวลาแข่ง: {match_date} เวลา {matched_match['time']} น.\n"
-            else:
-                res += f"⏰ เวลาแข่ง: {matched_match['time']} น.\n"
-            res += f"📈 ราคาต่อรองปัจจุบัน: {matched_match['handicap']}\n\n"
-            
-            home_elo = pred.get("home_elo")
-            away_elo = pred.get("away_elo")
-            if home_elo and away_elo:
-                res += f"📊 ค่าพลังความแกร่ง (Elo Rating):\n"
-                res += f"   - เจ้าบ้าน {pred['home_team']}: {int(home_elo)}\n"
-                res += f"   - ทีมเยือน {pred['away_team']}: {int(away_elo)}\n\n"
-            
-            res += f"📊 คาดการณ์จำนวนประตู (xG):\n"
-            res += f"   - เจ้าบ้าน {pred['home_team']}: {pred['home_xg']:.2f}\n"
-            res += f"   - ทีมเยือน {pred['away_team']}: {pred['away_xg']:.2f}\n\n"
-            
-            res += f"🎲 ความน่าจะเป็นผลการแข่ง (1X2):\n"
-            res += f"   - โอกาสเจ้าบ้านชนะ: {pred['p_home'] * 100:.1f}%\n"
-            res += f"   - โอกาสเสมอ: {pred['p_draw'] * 100:.1f}%\n"
-            res += f"   - โอกาสทีมเยือนชนะ: {pred['p_away'] * 100:.1f}%\n\n"
-            
-            res += f"🎯 ผลการวิเคราะห์จากโมเดล:\n"
-            res += f"   - {pred['value_recommendation']}\n\n"
-            
-            goal7_tip = matched_match.get("pundit_tip")
-            if goal7_tip:
-                res += f"💡 ทรรศนะจากเว็บ Goal7:\n"
-                res += f"   - {goal7_tip}\n\n"
-            
-            pol_analysis = fetch_polball_analysis(pred['home_team'], pred['away_team'])
-            if pol_analysis:
-                res += f"💡 ทรรศนะจากเว็บ Polball:\n"
-                res += f"   - ฟันธง: {pol_analysis['tip']}\n"
-                res += f"   - ผลที่คาด: {pol_analysis['score']}\n\n"
+            res = f"🔮 มนตราวิเคราะห์ชี้เป้า: {'ทีเด็ดชุด สเต็ป' if selected_count >= 3 else 'คัด'} {selected_count} คู่เด่นน่าจัดที่สุดวันนี้ค่ะ! ⚡\n\n"
                 
-            news_items = []
+            for tip in results_list:
+                rec_t = tip["home_team"] if tip["p_home_cover"] >= tip["p_away_cover"] else tip["away_team"]
+                w_prob = max(tip["p_home_cover"], tip["p_away_cover"])
+                is_best = any(t["id"] == tip["id"] for t in selected_tips)
+                self.db.save_prediction(
+                    tip["id"], self._get_football_date().strftime("%Y-%m-%d"), tip["home_team"], tip["away_team"],
+                    self.engine.parse_handicap(tip["handicap"]), rec_t, tip["edge_value"], w_prob, is_best
+                )
+
+            for i, tip in enumerate(selected_tips, 1):
+                rec_t = tip["home_team"] if tip["p_home_cover"] >= tip["p_away_cover"] else tip["away_team"]
+                w_prob = max(tip["p_home_cover"], tip["p_away_cover"])
+                dt_str = f" | ⏰ {tip.get('date', '')[:5]} ({tip['time']})" if tip.get('date') else f" | ⏰ {tip['time']}"
+                res += f"{i}. {tip['home_team']} VS {tip['away_team']}{dt_str}\n"
+                res += f"   - 🔮 วาง {rec_t}! (โอกาสวินแต้มต่อ: {w_prob * 100:.1f}%) | ราคา: {tip['handicap']}\n"
+                if tip.get("warnings"):
+                    for w in tip["warnings"]:
+                        res += f"   - {w}\n"
+                res += "\n"
+                
+            res += "ขอให้เฮงๆ รวยๆ กันถ้วนหน้านะคะ! 💪🥺💕"
+            return res[:5000]
+
+        if command in ["ผลงาน", "สถิติ"]:
             try:
-                from app.rss_scraper import get_news_for_match
-                news_items = get_news_for_match(pred['home_team'], pred['away_team'])
-                if news_items:
-                    res += f"📰 ข่าวสารล่าสุดที่เกี่ยวข้อง:\n"
-                    for news in news_items[:3]:
-                        res += f"   - [{news['source']}] {news['title']}\n"
-                    res += "\n"
+                self.db.update_predictions(self.scraper.fetch_finished_scores())
             except Exception:
                 pass
                 
-            res += "ขอให้โชคดีสมหวังน้าาา~ 🥺💕💪"
-            return make_analysis_flex(res, pred, matched_match, goal7_tip, pol_analysis, news_items)
-        except Exception as e:
-            return f"ขออภัยน้าาา ดึงข้อมูลวิเคราะห์คู่นี้ขัดข้อง: {str(e)} 🥺💦"
+            try:
+                stats = self.db.get_stats()
+            except Exception:
+                return "ไม่สามารถโหลดข้อมูลประวัติการทายผลได้ค่ะ 🥺💦"
+                
+            if not stats or stats.get("all", {}).get("total", 0) == 0:
+                return "ยังไม่มีข้อมูลประวัติการทายผลเลยนะคะ 🥺💦"
+                
+            res = "📊 สถิติผลงานการทำนายค่ะ! 💖\n\n"
+            s_best = stats.get("best", {})
+            res += f"⭐ ผลงาน 'ทีเด็ด' (คัดเน้นๆ):\n"
+            res += f"   - ทาย: {s_best.get('total', 0)} คู่ | วิน: {s_best.get('wins', 0)} | เสีย: {s_best.get('losses', 0)} | เจ๊า: {s_best.get('draws', 0)}\n"
+            res += f"   - 🎯 ความแม่นยำ (Win Rate): {s_best.get('win_rate', 0.0):.1f}%\n\n"
             
-    if is_group:
-        return ""
-    return "ยังไม่เข้าใจคำสั่งนี้ค่ะ 🥺 ลองพิมพ์ 'ทีเด็ด' หรือ 'วิ [ชื่อทีม]' / 'vs [ชื่อทีม]' ดูน้าาา พร้อมลุยค่ะ 💖"
+            s_all = stats.get("all", {})
+            res += f"📈 ผลงานรวมทุกคู่ (รวมคู่ธรรมดา):\n"
+            res += f"   - ทาย: {s_all.get('total', 0)} คู่ | วิน: {s_all.get('wins', 0)} | เสีย: {s_all.get('losses', 0)} | เจ๊า: {s_all.get('draws', 0)}\n"
+            res += f"   - 🎯 ความแม่นยำ (Win Rate): {s_all.get('win_rate', 0.0):.1f}%\n\n"
+            
+            def result_emoji(result: str) -> str:
+                return "🟢 วิน" if result == "WIN" else "🔴 เสีย" if result == "LOSE" else "🟡 เจ๊า"
+                
+            try:
+                recent_best = self.db.get_recent_predictions(3, is_best_tip=True)
+                recent_other = self.db.get_recent_predictions(3, is_best_tip=False)
+            except Exception:
+                recent_best, recent_other = [], []
+                
+            if recent_best:
+                res += "⚽ ผลงานการทาย 'ทีเด็ด' ล่าสุด:\n"
+                for i, item in enumerate(recent_best, 1):
+                    res += f"{i}. {item['home_team']} VS {item['away_team']}\n"
+                    res += f"   - วาง {item['rec_team']} ({item['handicap_value']}) -> {result_emoji(item['result'])} ({item['actual_score']})\n"
 
-async def send_daily_tips():
-    tips_text = process_user_command("ทีเด็ด")
-    if not tips_text or "วันนี้ไม่มีข้อมูล" in tips_text:
-        return
-    
-    group_ids = get_group_ids()
-    for gid in group_ids:
-        push_message(gid, tips_text)
+            if recent_other:
+                res += "\n⚽ ตัวอย่างคู่ที่ไม่ได้ออกทีเด็ด:\n"
+                for i, item in enumerate(recent_other, 1):
+                    res += f"{i}. {item['home_team']} VS {item['away_team']}\n"
+                    res += f"   - วาง {item['rec_team']} ({item['handicap_value']}) -> {result_emoji(item['result'])} ({item['actual_score']})\n"
+                    
+            res += "\nจะตั้งใจวิเคราะห์ให้แม่นยำยิ่งขึ้นเสมอนะคะ! 🥺💕💪"
+            return res
+            
+        if command.startswith("วิเคราะห์ "):
+            team_query = command[9:].strip()
+            if not team_query: return "กรุณาระบุชื่อทีมที่ต้องการค้นหาและวิเคราะห์ด้วยนะคะ 🥺"
+            
+            matched_match = None
+            for m in self.scraper.fetch_today_matches():
+                if self._is_team_match(team_query, m["home_team"]) or self._is_team_match(team_query, m["away_team"]):
+                    matched_match = m
+                    break
+                    
+            if not matched_match: return f"หาคู่แข่งของทีม '{team_query}' ในตารางแข่งขันวันนี้ไม่เจอเลยค่ะ 🥺💦 ลองพิมพ์ชื่อทีมให้ตรงคีย์น้าาา"
+                
+            try:
+                analysis = self.scraper.fetch_match_analysis(matched_match["id"])
+                pred = self.engine.calculate_prediction(analysis, matched_match.get("home_odds"), matched_match.get("away_odds"), matched_match.get("handicap"))
+                
+                rec_t = pred["home_team"] if pred["p_home_cover"] >= pred["p_away_cover"] else pred["away_team"]
+                w_prob = max(pred["p_home_cover"], pred["p_away_cover"])
+                self.db.save_prediction(
+                    matched_match["id"], self._get_football_date().strftime("%Y-%m-%d"), pred["home_team"], pred["away_team"],
+                    self.engine.parse_handicap(matched_match["handicap"]), rec_t, pred["edge_value"], w_prob
+                )
+                
+                res = f"⚽ วิเคราะห์แมตช์มาให้แล้วค่ะ! 💖\n\n🏆 {pred['home_team']} VS {pred['away_team']}\n"
+                res += f"⏰ วันเวลาแข่ง: {pred.get('date', '')} เวลา {matched_match['time']} น.\n" if pred.get('date') else f"⏰ เวลาแข่ง: {matched_match['time']} น.\n"
+                res += f"📈 ราคาต่อรองปัจจุบัน: {matched_match['handicap']}\n\n"
+                
+                if pred.get("home_elo") and pred.get("away_elo"):
+                    res += f"📊 ค่าพลังความแกร่ง (Elo Rating):\n   - เจ้าบ้าน {pred['home_team']}: {int(pred['home_elo'])}\n   - ทีมเยือน {pred['away_team']}: {int(pred['away_elo'])}\n\n"
+                
+                res += f"📊 คาดการณ์จำนวนประตู (xG):\n   - เจ้าบ้าน {pred['home_team']}: {pred['home_xg']:.2f}\n   - ทีมเยือน {pred['away_team']}: {pred['away_xg']:.2f}\n\n"
+                res += f"🎲 ความน่าจะเป็นผลการแข่ง (1X2):\n   - โอกาสเจ้าบ้านชนะ: {pred['p_home'] * 100:.1f}%\n   - โอกาสเสมอ: {pred['p_draw'] * 100:.1f}%\n   - โอกาสทีมเยือนชนะ: {pred['p_away'] * 100:.1f}%\n\n"
+                res += f"🎯 ผลการวิเคราะห์จากโมเดล:\n   - {pred['value_recommendation']}\n\n"
+                
+                if pred.get("warnings"):
+                    res += "⚠️ ข้อควรระวัง (จากสถิติและค่าน้ำ):\n"
+                    for w in pred["warnings"]:
+                        res += f"   - {w}\n"
+                    res += "\n"
+                
+                if pred.get("past_results"):
+                    res += "🔄 ผลบอลย้อนหลัง (H2H):\n" + "\n".join(f"   - {pr}" for pr in pred["past_results"]) + "\n\n"
+                
+                goal7_tip = matched_match.get("pundit_tip")
+                if goal7_tip:
+                    res += f"💡 ทรรศนะจากเว็บ Goal7:\n   - {goal7_tip}\n\n"
+                
+                pol_analysis = self.scraper.fetch_polball_analysis(pred['home_team'], pred['away_team'])
+                if pol_analysis:
+                    res += f"💡 ทรรศนะจากเว็บ Polball:\n   - ฟันธง: {pol_analysis['tip']}\n   - ผลที่คาด: {pol_analysis['score']}\n\n"
+                    
+                news_items = self.news.get_news_for_match(pred['home_team'], pred['away_team'])
+                if news_items:
+                    res += "📰 ข่าวสารล่าสุดที่เกี่ยวข้อง:\n" + "\n".join(f"   - [{n['source']}] {n['title']}" for n in news_items[:3]) + "\n\n"
 
-async def scheduler_loop():
-    while True:
-        try:
-            now = datetime.now()
-            target = datetime.combine(now.date(), time(8, 0))
-            if now >= target:
-                target += timedelta(days=1)
-            sleep_seconds = (target - now).total_seconds()
-            await asyncio.sleep(sleep_seconds)
-            await send_daily_tips()
-        except asyncio.CancelledError:
-            break
-        except Exception:
-            await asyncio.sleep(60)
+                res += "ขอให้โชคดีสมหวังน้าาา~ 🥺💕💪"
+                
+                scores = self.scraper.fetch_finished_scores()
+                if matched_match["id"] in scores:
+                    res = f"🏁 สกอร์จริง: {scores[matched_match['id']]}\n\n" + res
+                    
+                return res[:5000]
+            except Exception as e:
+                return f"ขออภัยน้าาา ดึงข้อมูลวิเคราะห์คู่นี้ขัดข้อง: {str(e)} 🥺💦"
+                
+        if is_group: return ""
+        return "ยังไม่เข้าใจคำสั่งนี้ค่ะ 🥺 ลองพิมพ์ 'ทีเด็ด' หรือ 'วิ [ชื่อทีม]' ดูน้าาา พร้อมลุยค่ะ 💖"
+
+    async def send_daily_tips(self):
+        tips_text = self.process_command("ทีเด็ด")
+        if not tips_text or "วันนี้ไม่มีข้อมูล" in tips_text: return
+        for gid in self.db.get_group_ids():
+            self.line.push_message(gid, tips_text)
+
+    async def scheduler_loop(self):
+        while True:
+            try:
+                now = datetime.now()
+                target = datetime.combine(now.date(), time(8, 0))
+                if now >= target: target += timedelta(days=1)
+                await asyncio.sleep((target - now).total_seconds())
+                await self.send_daily_tips()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(60)
+
+
+app = FastAPI(title="Football Prediction Bot")
+bot = FootballBotController()
 
 @app.on_event("startup")
 async def startup_event():
-    init_db()
-    asyncio.create_task(scheduler_loop())
+    bot.startup()
+    asyncio.create_task(bot.scheduler_loop())
+
+@app.post("/webhook")
+async def webhook(request: Request, x_line_signature: str = Header(None)):
+    if not x_line_signature: raise HTTPException(status_code=400, detail="Missing signature header")
+    body = await request.body()
+    if not bot.line.verify_signature(body, x_line_signature): raise HTTPException(status_code=400, detail="Invalid signature")
+    data = await request.json()
+    bot.process_webhook(x_line_signature, body, data)
+    return "OK"
 
 @app.post("/broadcast")
 async def manual_broadcast(token: str = None):
     secret = os.environ.get("LINE_CHANNEL_SECRET", "")
-    if not secret or token != secret:
-        raise HTTPException(status_code=403, detail="Forbidden")
-    await send_daily_tips()
-    return {"status": "success", "groups_sent": get_group_ids()}
-
+    if not secret or token != secret: raise HTTPException(status_code=403, detail="Forbidden")
+    await bot.send_daily_tips()
+    return {"status": "success", "groups_sent": bot.db.get_group_ids()}

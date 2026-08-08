@@ -1,11 +1,14 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from app.scraper import fetch_match_analysis
+from app.scraper import FootballScraper, CacheManager
 
 class TestScraper(unittest.TestCase):
+    def setUp(self):
+        self.cache = CacheManager()
+        self.scraper = FootballScraper(self.cache)
+
     @patch('app.scraper.requests.get')
     def test_parse_javascript_variables(self, mock_get):
-        # Simulated HTML content with javascript variables
         mock_get.return_value.status_code = 200
         mock_get.return_value.text = """
         <html>
@@ -19,49 +22,41 @@ class TestScraper(unittest.TestCase):
         </head>
         </html>
         """
-        data = fetch_match_analysis("12345")
+        data = self.scraper.fetch_match_analysis("12345")
         self.assertEqual(data["gameInfo"]["taname"], "Team A")
         self.assertEqual(data["gameTeamHistory"]["A"]["all"]["history"]["liveA"], [1])
         self.assertNotIn("gamePrediction", data)
 
     def test_extract_json_block_robustness(self):
-        from app.scraper import extract_json_block
         html_input = """
         var nested = {"a": {"b": "escaped \\" quote"}, "c": 3};
         """
-        parsed = extract_json_block(html_input, "nested")
+        parsed = self.scraper._extract_json_block(html_input, "nested")
         self.assertEqual(parsed["a"]["b"], 'escaped " quote')
         self.assertEqual(parsed["c"], 3)
 
     @patch('app.scraper.requests.get')
     def test_caching_fetch_today_matches(self, mock_get):
-        from app.scraper import fetch_today_matches, clear_cache
-        clear_cache()
+        self.cache.clear()
         mock_get.return_value.status_code = 200
         mock_get.return_value.content = b"<html><tr class='utable_tr' id='123'><td class='utable_f1'>22:00</td><td class='utable_f2'><span>Team A</span></td><td class='classodds'>0.25</td><td class='utable_f4'><span>Team B</span></td></tr></html>"
         
-        # First call: hits the mocked request
-        res1 = fetch_today_matches()
+        res1 = self.scraper.fetch_today_matches()
         self.assertEqual(len(res1), 1)
         self.assertEqual(res1[0]["home_team"], "Team A")
         
-        # Change mock response to verify cache is used instead of making new request
         mock_get.return_value.content = b"<html></html>"
-        res2 = fetch_today_matches()
-        # Should return cached data
+        res2 = self.scraper.fetch_today_matches()
         self.assertEqual(len(res2), 1)
         self.assertEqual(res2[0]["home_team"], "Team A")
         
-        # Clear cache and verify it fails to find data (or returns empty list now)
-        clear_cache()
-        res3 = fetch_today_matches()
+        self.cache.clear()
+        res3 = self.scraper.fetch_today_matches()
         self.assertEqual(len(res3), 0)
 
     @patch('app.scraper.requests.get')
     def test_fetch_polball_analysis(self, mock_get):
-        from app.scraper import fetch_polball_analysis, clear_cache
-        clear_cache()
-        
+        self.cache.clear()
         mock_home = MagicMock()
         mock_home.status_code = 200
         mock_home.text = """
@@ -69,7 +64,6 @@ class TestScraper(unittest.TestCase):
             <a href="https://www.polball.club/123/ผลบอล-วิเคราะห์บอล-เอจีเอฟ-อาร์ฮุส--vs--ซาบาห์">วิเคราะห์บอล : เอจีเอฟ อาร์ฮุส -vs- ซาบาห์</a>
         </html>
         """
-        
         mock_detail = MagicMock()
         mock_detail.status_code = 200
         mock_detail.text = """
@@ -78,14 +72,12 @@ class TestScraper(unittest.TestCase):
             <p>ผลที่คาด : เสมอ 1-1</p>
         </html>
         """
-        
         mock_get.side_effect = [mock_home, mock_detail]
         
-        res = fetch_polball_analysis("อาร์ฮุส", "ซาบาห์")
+        res = self.scraper.fetch_polball_analysis("อาร์ฮุส", "ซาบาห์")
         self.assertIsNotNone(res)
         self.assertEqual(res["tip"], "รอง ซาบาห์")
         self.assertEqual(res["score"], "เสมอ 1-1")
 
 if __name__ == '__main__':
     unittest.main()
-
